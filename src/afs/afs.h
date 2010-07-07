@@ -1460,7 +1460,8 @@ afs_set_cr_rgid(afs_ucred_t *cred, gid_t gid) {
 struct afs_enc_chunk{
 	
 	char *base;
-	int len;
+	int len;		/* Total length of the chunk */
+	int trans;		/* Length transferred */
 	int uio_start; /* Start index for the data to be read */
 	int uio_len;   /* Length of the data to be read */
 };

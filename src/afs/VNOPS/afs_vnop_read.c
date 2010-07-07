@@ -64,6 +64,7 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
 #endif
     afs_int32 code;
     struct vrequest treq;
+   
 
     AFS_STATCNT(afs_MemRead);
     if (avc->vc_error)
@@ -536,6 +537,7 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
     afs_int32 code;
     int trybusy = 1;
     struct vrequest treq;
+    struct afs_enc_chunk *chunk;
 
     AFS_STATCNT(afs_UFSRead);
     if (avc && avc->vc_error)
@@ -864,6 +866,7 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 			printk("end excess extent\n");
 			afs_print_uioinfo(tuiop_e);
 		}
+		chunk = afs_prepare_chunk(tuiop_s1, tuiop1, tuiop_e1);
 		
 		afsio_copy(&tuio, &tuio2, tvec2);
 #endif
@@ -934,13 +937,18 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	    AFS_GLOCK();
 #elif defined(AFS_LINUX20_ENV)
 	    AFS_GUNLOCK();
+	    
+	    if(start){
+	    	osi_rdwr(tfile, tuiop_s, UIO_READ);
+		    afs_chunk_append(chunk, tuiop_s, tuiop_s1);
+		}
 	    code = osi_rdwr(tfile, &tuio, UIO_READ);
-	    afs_print_uiodata(&tuio, tuiop1);
-	    if(start) osi_rdwr(tfile, tuiop_s, UIO_READ);
+	    afs_chunk_append(chunk, tuiop, tuiop1);
 	    if(end){
-	    	printk("trying to get data for last extent\n");
 	    	osi_rdwr(tfile, tuiop_e, UIO_READ);
+	    	afs_chunk_append(chunk, tuiop_e, tuiop_e1);
 	    }
+	    	    
 	    AFS_GLOCK();
 #elif defined(AFS_DARWIN80_ENV)
 	    AFS_GUNLOCK();
@@ -992,12 +1000,11 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	 */
 	if(tdc->f.fid.Fid.Vnode%2 == 0){
 		/* Even means file data */		
-		//struct afs_enc_chunk *chunk = afs_get_extent(tuiop_s, tuiop_s1, tuiop, tuiop1, tuiop_e, tuiop_e1);
-		//afs_print_chunk(chunk);
-		//afs_decrypt(chunk);	/* Decrypt chunk */
-		
-		//afs_enc_chunk_wb(chunk, tuiop, tuiop1);
-		afs_decrypt1(tuiop, tuiop1);
+
+		afs_print_chunk(chunk);
+		afs_decrypt(chunk);	/* Decrypt chunk */		
+		afs_enc_chunk_wb(chunk, tuiop, tuiop1);
+
 	}
 	
 	/* otherwise we've read some, fixup length, etc and continue with next seg */

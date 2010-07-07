@@ -1356,6 +1356,8 @@ extern unsigned long int do_mod64(long long int x, long long int y);
 extern struct afs_enc_chunk *afs_get_extent(struct uio *s, struct uio *s1, struct uio *t, struct uio *t1, struct uio *e, struct uio *e1);
 extern void afs_print_chunk(struct afs_enc_chunk *chunk);
 void afs_enc_chunk_wb(struct afs_enc_chunk *chunk, struct uio *data, struct uio *basis);
+struct afs_enc_chunk *afs_prepare_chunk(struct uio *s, struct uio *p, struct uio *e);
+void afs_chunk_append(struct afs_enc_chunk *ch, struct uio *data, struct uio *basis);
 /* Prototypes for generated files that aren't really in src/afs/ */
 
 /* afs_uuid.c */
