@@ -260,8 +260,8 @@ void afs_print_chunk(struct afs_enc_chunk *chunk){
 	
 	printk("Size: %d\nStart: %d\nEnd: %d\n", chunk->len, chunk->uio_start, chunk->uio_len);
 	afs_int32 i;
-	for(i=0;i<chunk->uio_len;i++);
-		//printk("%c", chunk->base[chunk->uio_start+i]);
+	for(i=0;i<chunk->len;i++)
+		printk("%c", chunk->base[i]);
 }
 
 void afs_enc_chunk_wb(struct afs_enc_chunk *chunk, struct uio *data, struct uio *basis){
@@ -272,12 +272,13 @@ void afs_enc_chunk_wb(struct afs_enc_chunk *chunk, struct uio *data, struct uio 
 	while(chunk_len){
 		/* Transfer the chunk back to the tuiop structure */
 		
-		space = basis->uio_iov[iov_no].iov_len - data->uio_iov[iov_no].iov_len;
+		space = basis->uio_iov[iov_no].iov_len;
 		char *d = (char *)basis->uio_iov[iov_no].iov_base;
 		i=0;
 		while(i<space && chunk_len){
-			d[i] = chunk->base[ind++];
+			d[i] = chunk->base[chunk->uio_start+ind];
 			i++;
+			ind++;
 			chunk_len--;
 		}
 		
@@ -286,6 +287,19 @@ void afs_enc_chunk_wb(struct afs_enc_chunk *chunk, struct uio *data, struct uio 
 }
 		
 		
+void afs_chunk_append(struct afs_enc_chunk *ch, struct uio *data, struct uio *basis){
+	
+	/* Appends the data to the chunk */
+	
+	if(basis!=NULL){
+		
+		char *temp = (char *)basis->uio_iov[0].iov_base;
+		int i=0;
+		for(i=0;i<basis->uio_iov[0].iov_len;i++)
+			ch->base[i+ch->trans] = temp[i];
+		ch->trans += basis->uio_iov[0].iov_len;
+	}
+}
 
 struct afs_enc_chunk *afs_get_extent(struct uio *s, struct uio *s1, struct uio *t, struct uio *t1, struct uio *e, struct uio *e1)
 {
@@ -343,7 +357,21 @@ struct afs_enc_chunk *afs_get_extent(struct uio *s, struct uio *s1, struct uio *
 
 }
 
+struct afs_enc_chunk *afs_prepare_chunk(struct uio *s, struct uio *t, struct uio *e){
 	
+	/* Sets the various checkpoints for the chunk which is to be read */
+	
+	int len = (s?s->uio_iov[0].iov_len:0) + (t?t->uio_iov[0].iov_len:0) + (e?e->uio_iov[0].iov_len:0);
+	
+	struct afs_enc_chunk *chunk = (struct afs_enc_chunk *)osi_Alloc(sizeof(struct afs_enc_chunk));
+	
+	chunk->uio_start = s?s->uio_iov[0].iov_len:0;
+	chunk->uio_len = t?t->uio_iov[0].iov_len:0;
+	chunk->len = len;
+	chunk->base = (char *)osi_Alloc(len * sizeof(char));
+	
+	return chunk;
+}
 	
 	
 	
