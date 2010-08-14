@@ -46,6 +46,31 @@ afsio_copy(struct uio *ainuio, struct uio *aoutuio,
     return 0;
 }
 
+/* routine to make a hard copy, allocating new space for the new iovecs */
+int
+afsio_copy_hard(struct uio *ainuio, struct uio *aoutuio,
+	   register struct iovec *aoutvec)
+{
+    register int i, j;
+    register struct iovec *tvec;
+
+    AFS_STATCNT(afsio_copy);
+    if (ainuio->afsio_iovcnt > AFS_MAXIOVCNT)
+	return EINVAL;
+    memcpy((char *)aoutuio, (char *)ainuio, sizeof(struct uio));
+    tvec = ainuio->afsio_iov;
+    aoutuio->afsio_iov = aoutvec;
+    for (i = 0; i < ainuio->afsio_iovcnt; i++) {
+	memcpy((char *)aoutvec, (char *)tvec, sizeof(struct iovec));
+	aoutvec->iov_base = (void *)osi_Alloc(aoutvec->iov_len * sizeof(char));	/* Make space for this many bytes */
+	tvec++;			/* too many compiler bugs to do this as one expr */
+	aoutvec++;
+    }
+    return 0;
+}
+
+
+
 /* trim the uio structure to the specified size */
 int
 afsio_trim(struct uio *auio, afs_int32 asize)

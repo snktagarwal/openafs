@@ -29,7 +29,7 @@
 
 
 #include<asm/div64.h>
-#define AFS_ENC_EXTENT 1000
+
 extern char afs_zeros[AFS_ZEROS];
 
 /* Imported variables */
@@ -144,7 +144,7 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
 	    if (tdc) {
 		ObtainReadLock(&tdc->lock);
 		offset = filePos - AFS_CHUNKTOBASE(tdc->f.chunk);
-		printk("File offset: %d\n", offset);
+		//printk("File offset: %d\n", offset);
 		len = tdc->f.chunkBytes - offset;
 	    }
 	} else {
@@ -264,7 +264,7 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
 		/* still fetching, some new data is here: 
 		 * compute length and offset */
 		offset = filePos - AFS_CHUNKTOBASE(tdc->f.chunk);
-		printk("File offset: %d\n", offset);
+		//printk("File offset: %d\n", offset);
 		len = tdc->validPos - filePos;
 	    } else {
 		/* no longer fetching, verify data version 
@@ -592,7 +592,7 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
     }
 #endif
 	/* We prep the auio structure for a transfer that would help us to make sure we end up on extent boundaries only */
-	printk("The file length of the interested file: %d\n", avc->f.m.Length);
+	//printk("The file length of the interested file: %d\n", avc->f.m.Length);
     if (filePos >= avc->f.m.Length) {
 	if (len > AFS_ZEROS)
 	    len = sizeof(afs_zeros);	/* and in 0 buffer */
@@ -608,8 +608,8 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	AFS_UIOMOVE(afs_zeros, trimlen, UIO_READ, tuiop, code);
     }
     
-    printk("AUIO\n");
-    afs_print_uioinfo(auio);
+    //printk("AUIO\n");
+    //afs_print_uioinfo(auio);
     while (avc->f.m.Length > 0 && totalLength > 0) {
 	/* read all of the cached info */
 	if (filePos >= avc->f.m.Length)
@@ -843,28 +843,28 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 		 * the file itself. If we are not on the boundary, let's demand for
 		 * more data */
 		
-		printk("tuiop info\n");
-		afs_print_uioinfo(tuiop);
+		//printk("tuiop info\n");
+		//afs_print_uioinfo(tuiop);
 		struct iovec *tvec_s1, *tvec_e1;
-		printk("Start value: %ld End value: %ld", start, end);
+		//printk("Start value: %ld End value: %ld", start, end);
 		tuiop_e = tuiop_e1 = tuiop_s = tuiop_s1 = NULL;
 		/* Check if we are at not at right extent boundary and it is not the end of file */
 		if((int)start){
-			tuiop_s = afs_get_start_extent(tuiop);
+			tuiop_s = afs_get_start_extent(tuiop, AFS_ENC_READ);
 			tvec_s1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
 			tuiop_s1 = (struct uio *)osi_Alloc(sizeof(struct uio));
 			afsio_copy(tuiop_s, tuiop_s1, tvec_s1);
-			printk("Start excess extent\n");
-			afs_print_uioinfo(tuiop_s);
+			//printk("Start excess extent\n");
+			//afs_print_uioinfo(tuiop_s);
 		}
 		
 		if(end){
-			tuiop_e = afs_get_end_extent(tuiop, trimlen);
+			tuiop_e = afs_get_end_extent(tuiop, trimlen, AFS_ENC_READ);
 			tvec_e1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
 			tuiop_e1 = (struct uio *)osi_Alloc(sizeof(struct uio));
 			afsio_copy(tuiop_e, tuiop_e1, tvec_e1);
-			printk("end excess extent\n");
-			afs_print_uioinfo(tuiop_e);
+			//printk("end excess extent\n");
+			//afs_print_uioinfo(tuiop_e);
 		}
 		chunk = afs_prepare_chunk(tuiop_s1, tuiop1, tuiop_e1);
 		
@@ -1001,7 +1001,7 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	if(tdc->f.fid.Fid.Vnode%2 == 0){
 		/* Even means file data */		
 
-		afs_print_chunk(chunk);
+		//afs_print_chunk(chunk);
 		afs_decrypt(chunk);	/* Decrypt chunk */		
 		afs_enc_chunk_wb(chunk, tuiop, tuiop1);
 
@@ -1009,7 +1009,7 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	
 	/* otherwise we've read some, fixup length, etc and continue with next seg */
 	len = len - AFS_UIO_RESID(tuiop);	/* compute amount really transferred */
-	printk("The len transferred: %d\n", len);
+	//printk("The len transferred: %d\n", len);
 	trimlen = len;
 	afsio_skip(auio, trimlen);	/* update input uio structure */
 	totalLength -= len;

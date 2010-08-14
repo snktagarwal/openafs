@@ -1457,6 +1457,11 @@ afs_set_cr_rgid(afs_ucred_t *cred, gid_t gid) {
 /* Encryption structures
  * The len of chunk will always be integral multiple of AFS_ENC_EXTENT.
  */
+#define AFS_ENC_READ 0
+#define AFS_ENC_WRITE 1
+#define AFS_ENC_UIO 2
+#define AFS_ENC_CHUNK 3
+#define AFS_ENC_EXTENT 1024
 struct afs_enc_chunk{
 	
 	char *base;

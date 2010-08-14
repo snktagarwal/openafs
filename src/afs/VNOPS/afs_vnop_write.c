@@ -327,6 +327,9 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
     struct uio tuio;
     struct uio *tuiop = &tuio;
     struct iovec *tvec, *tvec1;
+    struct uio *tuiop_s, *tuiop_e, *tuiop_s1, *tuiop_e1;
+    struct afs_enc_chunk *chunk_s, *chunk_e, *chunk;
+    int start, end;
 #endif
     struct osi_file *tfile;
     afs_int32 code;
@@ -379,7 +382,7 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
 	AFS_UIO_SETOFFSET(auio, avc->f.m.Length);
     }
 #endif
-	printk("The amount of data to be read out: %d and file offset: %d avc f length %d\n", totalLength, filePos, avc->f.m.Length);
+	
     /*
      * Note that we use startDate rather than calling osi_Time() here.
      * This is to avoid counting lock-waiting time in file date (for ranlib).
@@ -445,14 +448,41 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
 #endif
 	AFS_UIO_SETOFFSET(tuiop, offset);
 	
+	/* Get the boundary conditions, right now optimistic */
+	tuiop_e = tuiop_e1 = tuiop_s = tuiop_s1 = NULL;
+	printk("Length of file we are writing to: %d\n", avc->f.m.Length);
+	int s_mod = do_mod64(tuiop->uio_offset,AFS_ENC_EXTENT);
+	int e_mod = do_mod64(tuiop->uio_offset+trimlen,AFS_ENC_EXTENT);
+	if(e_mod && (tuiop->uio_offset+trimlen - e_mod + AFS_ENC_EXTENT)<=avc->f.m.Length)
+			end = 1;
+	else end = 0;
+	start = s_mod && (tuiop->uio_offset - s_mod + AFS_ENC_EXTENT) <= avc->f.m.Length;
+	
+	struct iovec *tvec_s1, *tvec_e1;
+	struct afs_enc_chunk *st =NULL, *en = NULL, *mid, *merge;
+	if((int)start){
+		tuiop_s = afs_get_start_extent(tuiop, AFS_ENC_WRITE);
+		tvec_s1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
+		tuiop_s1 = (struct uio *)osi_Alloc(sizeof(struct uio));
+		afsio_copy(tuiop_s, tuiop_s1, tvec_s1);
+		//printk("Start excess extent\n");
+		//afs_print_uioinfo(tuiop_s);
+	}
+		
+	if(end){
+		tuiop_e = afs_get_end_extent(tuiop, trimlen, AFS_ENC_WRITE);
+		tvec_e1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
+		tuiop_e1 = (struct uio *)osi_Alloc(sizeof(struct uio));
+		afsio_copy(tuiop_e, tuiop_e1, tvec_e1);
+		//printk("end excess extent\n");
+		//afs_print_uioinfo(tuiop_e);
+	}
+	
 	/* Before any data can be flushed on to the data cache,
 	 * we need to encrypt it!
 	 */
 	struct uio *tuio2;
-	if(tdc->f.fid.Fid.Vnode%2 == 0){
-		/* Make sure that we are having a file to encrypt*/
-		tuio2 = afs_encrypt(&tuio);
-	}
+	if(tdc->f.fid.Fid.Vnode%2 != 0) start=end=0;
 #if defined(AFS_AIX41_ENV)
 	AFS_GUNLOCK();
 	code =
@@ -500,7 +530,36 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
 	}
 #elif defined(AFS_LINUX20_ENV)
 	AFS_GUNLOCK();
+	//afs_print_uioinfo(tuiop_s);
+	//afs_print_uioinfo(tuiop_e);
+	if(start){
+		osi_rdwr(tfile, tuiop_s, UIO_READ);
+		st = afs_enc_tochunk(tuiop_s1);
+		afs_decrypt(st);
+		afs_trim_chunk(st, -1, s_mod);
+	}
+	if(end){
+		osi_rdwr(tfile, tuiop_e, UIO_READ);
+		en = afs_enc_tochunk(tuiop_e1);
+		afs_decrypt(en);
+		afs_trim_chunk(en, e_mod, -1);
+	}
+	//printk("start clear");
+	//afs_print_chunk(st);
+	//afs_print_chunk(en);
+	mid = afs_enc_tochunk(&tuio);
+	afs_print_chunk(mid);
+	merge = afs_merge_chunk3(st, mid, en);
+	afs_encrypt(merge);
+	afs_print_chunk(merge);
+	tuio2 = afs_prepare_wb(&tuio, merge->len);	/* Checks if we need to patch up the tuio structure */
+	afs_enc_chunk_wb(merge, tuio2, NULL);
+	afs_print_uioinfo(tuio2);
 	code = osi_rdwr(tfile, tuio2, UIO_WRITE);
+	//afs_encrypt(chunk_s);
+	
+	//afs_print_chunk(chunk_s);
+	
 	AFS_GLOCK();
 #elif defined(AFS_DARWIN80_ENV)
 	AFS_GUNLOCK();
