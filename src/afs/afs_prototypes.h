@@ -598,6 +598,9 @@ extern afs_int32 PagInCred(afs_ucred_t *cred);
 /* afs_osi_uio.c */
 extern int afsio_copy(struct uio *ainuio, struct uio *aoutuio,
 		      struct iovec *aoutvec);
+extern int afsio_copy_hard(struct uio *ainuio, struct uio *aoutuio,
+		      struct iovec *aoutvec);
+
 extern int afsio_trim(struct uio *auio, afs_int32 asize);
 extern int afsio_skip(struct uio *auio, afs_int32 asize);
 
@@ -1347,9 +1350,9 @@ extern void afs_CheckVolumeNames(int flags);
 /* afs_enc.c */
 extern void afs_decrypt(struct afs_enc_chunk *chunk);
 extern void afs_decrypt1(struct uio *data, struct uio *basis);
-extern struct uio * afs_encrypt(struct uio *data);
-extern struct uio *afs_get_end_extent(struct uio *basis, afs_int32 len);
-extern struct uio *afs_get_start_extent(struct uio *basis);
+//extern struct uio * afs_encrypt(struct uio *data);
+extern struct uio *afs_get_end_extent(struct uio *basis, afs_int32 len, afs_int32 rdwr);
+extern struct uio *afs_get_start_extent(struct uio *basis, afs_int32 rdwr);
 extern void afs_print_uioinfo(struct uio *uiop);
 extern void afs_print_uiodata(struct uio *target, struct uio *basis);
 extern unsigned long int do_mod64(long long int x, long long int y);
@@ -1358,6 +1361,12 @@ extern void afs_print_chunk(struct afs_enc_chunk *chunk);
 void afs_enc_chunk_wb(struct afs_enc_chunk *chunk, struct uio *data, struct uio *basis);
 struct afs_enc_chunk *afs_prepare_chunk(struct uio *s, struct uio *p, struct uio *e);
 void afs_chunk_append(struct afs_enc_chunk *ch, struct uio *data, struct uio *basis);
+void afs_chunk_append1(struct afs_enc_chunk *ch, struct afs_enc_chunk *data);
+void afs_trim_chunk(struct afs_enc_chunk *ch, int start, int end);
+struct afs_enc_chunk *afs_enc_tochunk(struct uio *uiop);
+struct afs_enc_chunk *afs_merge_chunk3(struct afs_enc_chunk *c1, struct afs_enc_chunk *c2, struct afs_enc_chunk *c3);
+void afs_encrypt(struct afs_enc_chunk *chunk);
+struct uio *afs_prepare_wb(struct uio *u, int len);
 /* Prototypes for generated files that aren't really in src/afs/ */
 
 /* afs_uuid.c */
