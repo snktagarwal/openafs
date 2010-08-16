@@ -376,9 +376,9 @@ struct uio *afs_get_mduio(int size){
 
 	char dummy[10];
 	sprintf(dummy,"%d",size);
-	struct uio *mdauio = (struct uio *)osi_Alloc(sizeof(struct uio));
+	struct uio *mdauio;
 	struct iovec *mdiovec = (struct iovec *)osi_Alloc(sizeof(struct iovec));;
-	
+	mdauio = (struct uio *)osi_Alloc(sizeof(struct uio));
 	mdauio->uio_offset = 0;
 	mdauio->uio_resid = strlen(dummy);
 	mdiovec->iov_len = strlen(dummy)+1;
@@ -418,7 +418,7 @@ void
 afs_fill_mdinfo(struct vcache *avc, struct vcache *mdavcp, afs_ucred_t *acred){
 	
 	char buf[10];
-	int i, size=-1, code;
+	int i, size=-1;
 	struct vrequest treq;
 	struct uio *temp = (struct uio *)osi_Alloc(sizeof(struct uio)), *mduio;
 	struct iovec *mdiovec = (struct iovec *)osi_Alloc(sizeof(struct iovec));
@@ -435,4 +435,11 @@ afs_fill_mdinfo(struct vcache *avc, struct vcache *mdavcp, afs_ucred_t *acred){
 	buf[i]='\0';
 	size = myatoi(buf);
 	avc->f.m.Length = size;		
+}
+
+void
+afs_enc_freechunk(struct afs_enc_chunk *ch){
+	
+	osi_FreeSmallSpace(ch->base);
+	return;
 }

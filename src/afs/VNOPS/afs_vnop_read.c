@@ -1034,9 +1034,16 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 #ifdef AFS_DARWIN80_ENV
     if (tuiop)
        uio_free(tuiop);
+    if (tuiop_s1)
+       uio_free(tuiop_s1);
+    if (tuiop_e1)
+       uio_free(tuiop_e1);
 #else
     osi_FreeSmallSpace(tvec);
+    osi_FreeSmallSpace(tvec_s1);
+    osi_FreeSmallSpace(tvec_e1);
 #endif
+	afs_enc_freechunk(chunk);
     AFS_DISCON_UNLOCK();
     error = afs_CheckCode(error, &treq, 13);
     return error;

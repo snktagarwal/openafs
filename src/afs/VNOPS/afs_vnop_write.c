@@ -459,14 +459,12 @@ afs_UFSWrite1(register struct vcache *avc, struct uio *auio, int aio,
 		 */ 
 		/* Get the boundary conditions, right now optimistic */
 		
-		printk("Length of file we are writing to: %d\n", avc->f.m.Length);
 		s_mod = do_mod64(tuiop->uio_offset,AFS_ENC_EXTENT);
 		e_mod = do_mod64(tuiop->uio_offset+trimlen,AFS_ENC_EXTENT);
 		if(e_mod)
 				end = 1;
 		else end = 0;
 		start = s_mod;
-		printk("s_mod details: uio_offset %d, s_mod: %d\n", tuiop->uio_offset, s_mod);
 		if((int)start){
 			tuiop_s = afs_get_start_extent(tuiop, AFS_ENC_WRITE);
 			tvec_s1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));

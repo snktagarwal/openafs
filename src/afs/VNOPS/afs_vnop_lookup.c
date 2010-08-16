@@ -1914,7 +1914,6 @@ afs_lookup(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, afs_ucred_t *acr
 int mdcode, code;
 struct vcache *mdavcp;
 char *mdaname = afs_get_md_filename(aname);
-struct VenusFid mdFid;
 #if defined(AFS_SUN5_ENV) || defined(AFS_SGI_ENV)
 	mdcode = afs_lookup1(adp, mdaname, &mdavcp, pnp, flags, rdir, acred);
 	code = afs_lookup1(adp, aname, avcp, pnp, flags, rdir, acred);
