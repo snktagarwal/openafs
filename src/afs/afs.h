@@ -1465,7 +1465,7 @@ afs_set_cr_rgid(afs_ucred_t *cred, gid_t gid) {
 #define AFS_ENC_WRITE 1
 #define AFS_ENC_UIO 2
 #define AFS_ENC_CHUNK 3
-#define AFS_ENC_EXTENT 1000
+#define AFS_ENC_EXTENT 1024
 struct afs_enc_chunk{
 	
 	char *base;

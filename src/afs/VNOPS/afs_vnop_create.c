@@ -558,6 +558,10 @@ afs_LocalHero(struct vcache *avc, struct dcache *adc,
     }
 }
 
+/* Wrapper interface to afs_create
+ * creates a metadata file along with original file
+ */
+
 #ifdef AFS_SGI64_ENV
 int
 afs_create(OSI_VC_DECL(adp), char *aname, struct vattr *attrs, int flags,
@@ -569,10 +573,6 @@ afs_create(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
 	   afs_ucred_t *acred)
 #endif				/* AFS_SGI64_ENV */
 {
-	
-	/* This is the main function which creates the two files, one the main and the other the metadata */
-
-
 	struct vcache *mdavcp;
 	int code;
 	char *mdaname = afs_get_md_filename(aname);
@@ -595,5 +595,6 @@ afs_create(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
 	printk("The FID of the file is: %d", (*avcp)->f.fid.Fid.Vnode);
 	(*avcp)->is_enc = 1;
 	(*avcp)->mdFid = mdavcp->f.fid;
-	return code;
+	mdavcp->is_enc = 0;
+	afs_PutVCache(mdavcp);
 }

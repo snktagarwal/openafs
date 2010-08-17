@@ -1360,18 +1360,17 @@ extern void afs_print_chunk(struct afs_enc_chunk *chunk);
 extern void afs_enc_chunk_wb(struct afs_enc_chunk *chunk, struct uio *data, struct uio *basis);
 extern struct afs_enc_chunk *afs_prepare_chunk(struct uio *s, struct uio *p, struct uio *e);
 extern void afs_chunk_append(struct afs_enc_chunk *ch, struct uio *data, struct uio *basis);
-extern void afs_chunk_append1(struct afs_enc_chunk *ch, struct afs_enc_chunk *data);
 extern void afs_trim_chunk(struct afs_enc_chunk *ch, int start, int end);
 extern struct afs_enc_chunk *afs_enc_tochunk(struct uio *uiop);
 extern struct afs_enc_chunk *afs_merge_chunk3(struct afs_enc_chunk *c1, struct afs_enc_chunk *c2, struct afs_enc_chunk *c3);
 extern void afs_encrypt(struct afs_enc_chunk *chunk);
 extern struct uio *afs_prepare_wb(struct uio *u, int len);
 extern struct uio *afs_get_mduio1(struct vcache *md);
-/* afs_enc_md.c */
-extern char *afs_get_md_filename(char *aname);
-extern int afs_is_md(char *aname);
-extern int myatoi(char *str);
+extern char *afs_get_md_filename(char *basename);
 extern void afs_fill_mdinfo(struct vcache *avc, struct vcache *mdavcp, afs_ucred_t *acred);
+extern int myatoi(char *str);
+extern struct uio *afs_get_mduio(int size);
+extern struct uio* afs_get_mduio1(struct vcache *md);
 
 /* Prototypes for generated files that aren't really in src/afs/ */
 

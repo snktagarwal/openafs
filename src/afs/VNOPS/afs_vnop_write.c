@@ -462,11 +462,11 @@ afs_UFSWrite1(register struct vcache *avc, struct uio *auio, int aio,
 		printk("Length of file we are writing to: %d\n", avc->f.m.Length);
 		s_mod = do_mod64(tuiop->uio_offset,AFS_ENC_EXTENT);
 		e_mod = do_mod64(tuiop->uio_offset+trimlen,AFS_ENC_EXTENT);
-		if(e_mod && (tuiop->uio_offset+trimlen - e_mod + AFS_ENC_EXTENT)<=avc->f.m.Length)
+		if(e_mod)
 				end = 1;
 		else end = 0;
-		start = s_mod && (tuiop->uio_offset - s_mod + AFS_ENC_EXTENT) <= avc->f.m.Length;
-	
+		start = s_mod;
+		printk("s_mod details: uio_offset %d, s_mod: %d\n", tuiop->uio_offset, s_mod);
 		if((int)start){
 			tuiop_s = afs_get_start_extent(tuiop, AFS_ENC_WRITE);
 			tvec_s1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
@@ -958,15 +958,29 @@ afs_fsync(OSI_VC_DECL(avc), afs_ucred_t *acred)
     return code;
 }
 
+/* Wrapper interface to afs_UFSWrite
+ * Check for encryption, if true, writeback
+ * the actual file size to metadata file
+ */
 int
 afs_UFSWrite(register struct vcache *avc, struct uio *auio, int aio,
 	     afs_ucred_t *acred, int noLock)
 {	
-	int code, size=12;
+	int code, size=0;
 	struct vrequest treq;
 	struct vcache *mdavcp;
 	struct uio *mdauio;
+	
 	if(avc->is_enc==1){
+		
+		/* Find the file size to be written back */
+		if(aio==1){
+			size = avc->f.m.Length + auio->uio_iov[0].iov_len;
+		}
+		else if(auio->uio_offset + auio->uio_iov[0].iov_len > avc->f.m.Length)
+			size = auio->uio_offset + auio->uio_iov[0].iov_len;
+		else size = avc->f.m.Length;
+		
 	    afs_InitReq(&treq, acred);
 		mdavcp = afs_GetVCache(&(avc->mdFid), &treq, NULL, NULL);
 		mdauio = afs_get_mduio(size);
@@ -978,10 +992,7 @@ afs_UFSWrite(register struct vcache *avc, struct uio *auio, int aio,
 		
 		afs_PutVCache(mdavcp);
 	}
-	//printk("DEBUG:****Offset: %d Reside: %d Iov: %d*****\n", auio->uio_offset, AFS_UIO_RESID(auio), auio->uio_iov[0].iov_len);
 	code = afs_UFSWrite1(avc, auio, aio, acred, noLock);
 	avc->f.m.Length = size;
 	return code;
 }
-	
-	

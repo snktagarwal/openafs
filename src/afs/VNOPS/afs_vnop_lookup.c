@@ -1925,8 +1925,7 @@ struct VenusFid mdFid;
 	mdcode = afs_lookup1(adp, mdaname, &mdavcp, acred);
 	code = afs_lookup1(adp, aname, avcp, acred);
 #endif
-
-	if(mdcode==0){
+	if(mdcode==0 && code==0){
 		(*avcp)->is_enc = 1;
 		(*avcp)->mdFid = mdavcp->f.fid;
 		afs_fill_mdinfo(*avcp, mdavcp, acred);
