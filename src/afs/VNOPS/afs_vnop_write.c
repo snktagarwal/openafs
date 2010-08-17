@@ -450,7 +450,6 @@ afs_UFSWrite1(register struct vcache *avc, struct uio *auio, int aio,
 	afsio_trim(&tuio, trimlen);
 #endif
 	AFS_UIO_SETOFFSET(tuiop, offset);
-	printk("Got till here, where is the problem then ?");
 	
 	
 	/* We need to first check if the file we are dealing with is a no encryption file( metadata + others ) OR encrypted file */

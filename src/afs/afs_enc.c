@@ -9,9 +9,11 @@
 #include "afs/nfsclient.h"
 #include "afs/afs_osidnlc.h"
 #include "afs/afs_osi.h"
-
+#ifndef UKERNEL
 #include <asm/div64.h>
-
+#else
+#define printk printf
+#endif
 
 
 /* Used for division, modulus in kernel mode, a%b when b!=2^k */
@@ -19,8 +21,11 @@ unsigned long int do_mod64(long long int x, long long int y){
 	/* Does not modify either x or y unlike the asm counter part */
 	
 	long long int x1=x, y1=y;
-	
+#ifndef UKERNEL
 	return do_div(x1, y1);
+#else
+	return x1%y1;
+#endif
 }
 
 /* Prints the uio structure info */

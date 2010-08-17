@@ -26,7 +26,6 @@
 #include "afs/unified_afs.h"
 
 
-
 /* question: does afs_create need to set CDirty in the adp or the avc?
  * I think we can get away without it, but I'm not sure.  Note that
  * afs_setattr is called in here for truncation.
@@ -591,7 +590,6 @@ afs_create(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
 #else /* AFS_SGI64_ENV */
 	afs_create1(adp, aname, attrs, aexcl, amode, avcp, acred);
 #endif				/* AFS_SGI64_ENV */	
-	printk("The FID of the file is: %d", (*avcp)->f.fid.Fid.Vnode);
 	(*avcp)->is_enc = 1;
 	(*avcp)->mdFid = mdavcp->f.fid;
 	mdavcp->is_enc = 0;
