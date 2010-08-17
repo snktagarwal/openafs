@@ -361,11 +361,6 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
 	/* Check if the dcache associated is a directory metadata or 
 	 * file data
 	 */
-	if(tdc->f.fid.Fid.Vnode%2 == 0){
-		/* Even means file data */
-		afs_decrypt1(tuiop, tuiop1);	/* Decrypt tuiop data with tuiop1 as basis */
-	}
-	else printk("The vnode val is: %d\n",tdc->f.fid.Fid.Vnode);
  
 	
 	/* otherwise we've read some, fixup length, etc and continue with next seg */

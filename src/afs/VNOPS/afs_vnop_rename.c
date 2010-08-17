@@ -445,10 +445,12 @@ afs_rename(OSI_VC_DECL(aodp), char *aname1, struct vcache *andp, char *aname2, s
 afs_rename(OSI_VC_DECL(aodp), char *aname1, struct vcache *andp, char *aname2, afs_ucred_t *acred)
 #endif
 {
-    afs_int32 code;
+    register afs_int32 code, mdcode;
     struct afs_fakestat_state ofakestate;
     struct afs_fakestat_state nfakestate;
     struct vrequest treq;
+    struct vcache *mdavcp;
+    char *mdaname1, *mdaname2;
     OSI_VC_CONVERT(aodp);
 
     code = afs_InitReq(&treq, acred);
@@ -465,7 +467,17 @@ afs_rename(OSI_VC_DECL(aodp), char *aname1, struct vcache *andp, char *aname2, a
     code = afs_EvalFakeStat(&andp, &nfakestate, &treq);
     if (code)
 	goto done;
-    code = afsrename(aodp, aname1, andp, aname2, acred, &treq);
+	/* Check if the file is a encrypted file, in that case move the metadata file as well */
+	mdaname1 = afs_get_md_filename(aname1);
+	mdaname2 = afs_get_md_filename(aname2);
+#if defined(UKERNEL)
+	mdcode = afs_lookup(aodp, mdaname1, &mdavcp, acred, 0);
+#else
+	mdcode = afs_lookup(aodp, mdaname1, &mdavcp, acred);
+#endif
+	code = afsrename(aodp, aname1, andp, aname2, acred, &treq);
+    if(!mdcode) afsrename(aodp, mdaname1, andp, mdaname2, acred, &treq);
+    afs_PutVCache(mdavcp);
   done:
     afs_PutFakeStat(&ofakestate);
     afs_PutFakeStat(&nfakestate);

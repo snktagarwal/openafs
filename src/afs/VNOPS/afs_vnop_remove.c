@@ -479,7 +479,12 @@ afs_remove(OSI_VC_DECL(adp), char *aname, afs_ucred_t *acred)
 	char *mdaname;
 	code = afs_remove1(adp, aname, acred);
 	mdaname = afs_get_md_filename(aname);
+#if defined(UKERNEL)
+	mdcode = afs_lookup(adp, mdaname, &mdavcp, acred, 0);
+#else
 	mdcode = afs_lookup(adp, mdaname, &mdavcp, acred);
+#endif
+	
 	afs_PutVCache(mdavcp);
 	if(!mdcode) afs_remove1(adp, mdaname, acred);
 	return code;

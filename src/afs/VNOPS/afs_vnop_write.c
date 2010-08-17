@@ -545,13 +545,10 @@ afs_UFSWrite1(register struct vcache *avc, struct uio *auio, int aio,
 			afs_trim_chunk(en, e_mod, -1);
 		}
 		mid = afs_enc_tochunk(&tuio);
-		afs_print_chunk(mid);
 		merge = afs_merge_chunk3(st, mid, en);
 		afs_encrypt(merge);
-		afs_print_chunk(merge);
 		tuio2 = afs_prepare_wb(&tuio, merge->len);	/* Checks if we need to patch up the tuio structure */
 		afs_enc_chunk_wb(merge, tuio2, NULL);
-		afs_print_uioinfo(tuio2);
 		code = osi_rdwr(tfile, tuio2, UIO_WRITE);
 	}
 	else osi_rdwr(tfile, &tuio, UIO_WRITE);

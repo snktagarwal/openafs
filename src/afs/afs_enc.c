@@ -13,8 +13,8 @@
 #include <asm/div64.h>
 
 
-/* Utility function to print the struct uio stats, to be removed later */
 
+/* Used for division, modulus in kernel mode, a%b when b!=2^k */
 unsigned long int do_mod64(long long int x, long long int y){
 	/* Does not modify either x or y unlike the asm counter part */
 	
@@ -23,18 +23,13 @@ unsigned long int do_mod64(long long int x, long long int y){
 	return do_div(x1, y1);
 }
 
+/* Prints the uio structure info */
 void afs_print_uioinfo(struct uio *uiop){
 	int i;
 	printk("offset: %d iovcnt: %d, uio_resid: %d\n", uiop->uio_offset, uiop->uio_iovcnt, uiop->uio_resid);
 	for(i=0;i<uiop->uio_iovcnt;i++)
 		printk("iov_len: %d, ",uiop->uio_iov[i].iov_len);
 }
-
-
-/* data structure contains the uio structure after transfer, basis contains it before transfer
- * we find the diff of the two and manipulate the data.
- */
-
 
 
 /* Implementation of the ROT-13 cipher */ 
@@ -58,7 +53,9 @@ afs_decrypt_extent(char *extent_vec, int extent_len){
  	}
  	
 }
- 
+
+
+
 void
 afs_write_extent(struct uio *uiop, char *iov_base, int base, char *extent_vec, int extent_len)
 {
@@ -70,6 +67,10 @@ afs_write_extent(struct uio *uiop, char *iov_base, int base, char *extent_vec, i
 		iov_base[base+i] = extent_vec[i];
 }
 
+
+/* Assuming that the chunk is always a multiple of AFS_ENC_EXTENT, decrypts the chunk.
+ * see afs.h for afs_enc_chunk definition
+ */
 void afs_decrypt(struct afs_enc_chunk *chunk){
 
 	/* We know that the chunk contanins N times AFS_ENC_EXTENT
@@ -79,6 +80,9 @@ void afs_decrypt(struct afs_enc_chunk *chunk){
 	char *extent=chunk->base;
 	
 	while(1){
+		/* if else not required if we consider chunk->len = k*AFS+_ENC_EXTENT.
+		 * but let's be safe.
+		 */
 		if(left>AFS_ENC_EXTENT){
 			afs_decrypt_extent(extent, AFS_ENC_EXTENT);
 			extent+=AFS_ENC_EXTENT;
@@ -91,129 +95,22 @@ void afs_decrypt(struct afs_enc_chunk *chunk){
 		}
 	}
 }
-	
+
+/* Encrypts the chunk */
 void afs_encrypt(struct afs_enc_chunk *chunk){
 	
-	/* For now simply call the decrypt functionality */
+	/* For now simply call the decrypt functionality, as ROT13(ROT13(X)) = X */
 	
 	afs_decrypt(chunk);
 
 }
 
-void
-afs_decrypt1(struct uio *data, struct uio *basis)
-{
-	afs_int32 i, j, vec_trans, extent_ind=0, extent_basis;
-	char *datap;
-	char *extent_vec = (char *)osi_Alloc(AFS_ENC_EXTENT*sizeof(char));
-	
-	for(i=0;i<=(basis->uio_iovcnt - data->uio_iovcnt);i++){
-		/* find the data transferred in this segment */
-		j=0;
-		vec_trans = basis->uio_iov[i].iov_len - data->uio_iov[i].iov_len;
-		printk("Len of transfer: %d\n", vec_trans);
-		datap = (char *)basis->uio_iov[i].iov_base;
-		extent_basis = 0;
-		while(j < vec_trans)
-		{
-			extent_vec[extent_ind++] = datap[j++];
-			
-			if(j==vec_trans){
-				/* We might be facing a situation where the last extent is incomplete */
-				afs_decrypt_extent(extent_vec, extent_ind);
-				
-				afs_write_extent(data, datap, extent_basis, extent_vec, extent_ind);
-				
-				break;
-			}
-			
-			else if(extent_ind == AFS_ENC_EXTENT)
-			{
-				/* Decrypt the extent */
-				afs_decrypt_extent(extent_vec, AFS_ENC_EXTENT);
-			
-				/* Write back to the data uio */
-				afs_write_extent(data, datap, extent_basis, extent_vec, AFS_ENC_EXTENT);
-			
-				/* Reset extent_ind, extent_basis and continue */
-				extent_basis += AFS_ENC_EXTENT;
-				extent_ind = 0;
-			}
-		} 
-	}
-	
-	
-}
+/* Suppose that AFS_ENC_EXTENT is 1000 and a read/write request for 10 - 90 is recieved,
+ * we will need to extend the extent from 0-1000, so start extent will mean 0 - 9.
+ * end extent will be 91 - 1000, and the main extent is 10 - 90
+ */
 
-void
-afs_print_uiodata(struct uio *data, struct uio *basis)
-{
-	int iovcnt, i, j, vec_trans;
-	char *datap;
-	printk("Out Vnop");
-	printk("info data");
-	afs_print_uioinfo(data);
-			
-	printk("info basis");
-	afs_print_uioinfo(basis);
-	
-	iovcnt = basis->uio_iovcnt - data->uio_iovcnt;
-	
-	printk("len: %d", basis->uio_iov[0].iov_len);
-	
-	return;
-	for(i=0;i<=(basis->uio_iovcnt - data->uio_iovcnt);i++){
-		/* find the data transferred in this segment */
-		vec_trans = basis->uio_iov[i].iov_len - data->uio_iov[i].iov_len;
-		printk("Data in segment: %d\n", vec_trans);
-		datap = (char *)basis->uio_iov[i].iov_base;
-		for(j=0;j<vec_trans;j++)
-			printk("%d:%c", j, datap[j]);
-			
-	}
-	
-	
-}
-
-
-struct uio *
-afs_encrypt1(struct uio *ainuio)
-{
-	struct uio *aoutuio = (struct uio *)osi_Alloc(sizeof(struct uio));
-    register int i, j;
-    register struct iovec *tvec, *aoutvec;
-    char *in, *out;
-
-    if (ainuio->afsio_iovcnt > AFS_MAXIOVCNT)
-	return NULL;
-    memcpy((char *)aoutuio, (char *)ainuio, sizeof(struct uio));
-    aoutvec = (struct iovec *)osi_Alloc(aoutuio->uio_iovcnt*sizeof(struct iovec));
-   
-    tvec = ainuio->afsio_iov;
-    /* Overwrite afsio_iov */
-    aoutuio->afsio_iov = aoutvec;
-    for (i = 0; i < ainuio->afsio_iovcnt; i++) {
-		memcpy((char *)aoutvec, (char *)tvec, sizeof(struct iovec));
-		
-		/* Allocate space/overwrite base pointer for the new vector */
-		aoutvec->iov_base = (void *)afs_osi_Alloc(aoutvec->iov_len);
-		//memcpy((char *)(aoutvec->iov_base), (char *)(tvec->iov_base), tvec->iov_len);
-		in = (char *)(tvec->iov_base);
-		out = (char *)(aoutvec->iov_base);
-		for(j=0;j<aoutvec->iov_len;j++)
-			if(in[j]>='A' && in[j]<='Z')
-				/* Caps is here */
-				out[j]=((in[j]-'A')+13)%26 + 'A';
-			else if(in[j]>='a' && in[j]<='z')
-				/* smalls is here */
-				out[j]=((in[j]-'a')+13)%26+'a';
-			else
-				out[j] = in[j];
-		tvec++;			/* too many compiler bugs to do this as one expr */
-		aoutvec++;
-    }
-    return aoutuio;
-}
+/* Obtains the starting compeletion extent */
 
 struct uio *
 afs_get_start_extent(struct uio *basis, int rdwr){
@@ -227,9 +124,7 @@ afs_get_start_extent(struct uio *basis, int rdwr){
 	 afsio_copy(basis, start_uio, start_iovec);
 	
  	 mod = do_mod64(start_uio->uio_offset, AFS_ENC_EXTENT);
- 	 printk("The mod for the start extent is: %ld", mod);
 	 start_uio->uio_offset -= mod; 
-	 //afsio_trim(start_uio, mod);
 	 if(rdwr==AFS_ENC_READ)
 		 start_uio->uio_iov[0].iov_len = mod;
 	 else if(rdwr==AFS_ENC_WRITE)
@@ -237,6 +132,8 @@ afs_get_start_extent(struct uio *basis, int rdwr){
 	 start_uio->uio_iov[0].iov_base = (void *)osi_Alloc(start_uio->uio_iov[0].iov_len);
 	 return start_uio;
 }
+
+/* Obtains the ending completion extent */
 
 struct uio *
 afs_get_end_extent(struct uio *basis, afs_int32 len, int rdrw){
@@ -249,9 +146,6 @@ afs_get_end_extent(struct uio *basis, afs_int32 len, int rdrw){
 	 afsio_copy(basis, end_uio, end_iovec);
 	 
  	 mod = do_mod64(end_uio->uio_offset+len, AFS_ENC_EXTENT);
- 	 printk("The mod for the last extent is: %ld", mod);
- 	 
- 	 /* Lot of boundary cases to be considered ;) */
  	 
  	 if(rdrw==AFS_ENC_READ){
 	 	 end_uio->uio_offset = end_uio->uio_offset + len;
@@ -265,6 +159,10 @@ afs_get_end_extent(struct uio *basis, afs_int32 len, int rdrw){
 	 return end_uio;
 }
 
+/* Utility function to see what contents a chunk hold,
+ * useful when debugging
+ */
+
 void afs_print_chunk(struct afs_enc_chunk *chunk){
 	
 	afs_int32 i;
@@ -273,10 +171,23 @@ void afs_print_chunk(struct afs_enc_chunk *chunk){
 		printk("%c", chunk->base[i]);
 }
 
+/* Flow of encryption(write):
+ * Read the request
+ * Find completion extents
+ * Construct a chunk
+ * Encrypt
+ * Write back to the initial request structure. <-- enc_chunk_wb writes back encrypted/decrypted
+ * data to the initial request structure.
+ * Parameters:
+ * chunk: decrypted/encrypted(read/write) chunk
+ * data: the request structure to be written to
+ * basis: the basis to obtain base pointers to iovec structures
+ */
+
+
 void afs_enc_chunk_wb(struct afs_enc_chunk *chunk, struct uio *data, struct uio *basis){
 	afs_int32 i, iov_no=0, space, chunk_len = chunk->uio_len, ind=0;
 	char *d;
-	printk("Writing back data amount: %d\n", chunk->uio_len);
 	/* Considering WRITE requests */
 	if(basis==NULL) basis = data;
 	while(chunk_len){
@@ -296,7 +207,8 @@ void afs_enc_chunk_wb(struct afs_enc_chunk *chunk, struct uio *data, struct uio 
 	}
 }
 		
-		
+/* Appends data stored in uio to a chunk */
+
 void afs_chunk_append(struct afs_enc_chunk *ch, struct uio *data, struct uio *basis){
 	
 	/* Appends the data to the chunk */
@@ -313,6 +225,8 @@ void afs_chunk_append(struct afs_enc_chunk *ch, struct uio *data, struct uio *ba
 		
 }
 
+/* Appends data stored in a chunk to another chunk */
+
 void afs_chunk_append1(struct afs_enc_chunk *ch, struct afs_enc_chunk *data){
 	
 	/* Appends data chunk to original chunk */
@@ -324,60 +238,13 @@ void afs_chunk_append1(struct afs_enc_chunk *ch, struct afs_enc_chunk *data){
 		ch->base[ch->trans+i] = data->base[data->uio_start+i];
 }
 
-struct afs_enc_chunk *afs_get_extent(struct uio *s, struct uio *s1, struct uio *t, struct uio *t1, struct uio *e, struct uio *e1)
-{
-	/* Considers the start extent, the current extent and the end extent to find the actual extent */
-	
-	int trans_len= (s1?s1->uio_iov[0].iov_len:0) + (t1?t1->uio_iov[0].iov_len:0) + (e1?e1->uio_iov[0].iov_len:0);
-	struct afs_enc_chunk *ext;
-	char *temp, *extent;
-	int transfer=0, i;
-		
-	printk("trans len: %d\n", trans_len);
-	
-	ext = (struct afs_enc_chunk *)osi_Alloc(sizeof(struct afs_enc_chunk));
-	
-	ext->uio_start = s1?s1->uio_iov[0].iov_len:0;
-	ext->uio_len = t1?t1->uio_iov[0].iov_len:0;
-	ext->len = trans_len;
-	ext->base = (char *)osi_Alloc(trans_len * sizeof(char));
-	extent = ext->base;
-	if(s!=NULL){
-		
-		temp = (char *)s1->uio_iov[0].iov_base;
-		i=0;
-		printk("\nStart extent\n");
-		for(i=0;i<s1->uio_iov[0].iov_len;i++){
-			printk("%c", temp[i]);
-			extent[transfer++] = temp[i];
-		}
-	}
-	
-	if(t!=NULL){
-		
-		temp = (char *)t1->uio_iov[0].iov_base;
-		printk("\nMid extent\n");		
-		for(i=0;i<t1->uio_iov[0].iov_len;i++){
-			printk("%c", temp[i]);
-			extent[transfer++] = temp[i];
-		}
-	
-	}
-	
-	if(e!=NULL){
-		
-		temp = (char *)e1->uio_iov[0].iov_base;
-		printk("\nEnd extent\n");
-		for(i=0;i<e1->uio_iov[0].iov_len;i++){
-			printk("%c", temp[i]);
-			extent[transfer++] = temp[i];
-		}
-	
-	}
-	
-	return ext;
-
-}
+/* Constructs a chunk( allocates space for data, fixes length etc ) on the basis of start, main and end
+ * entents during read/write
+ * Parameters:
+ * s1: Start extent
+ * t1: Mid extent
+ * e1: End extent
+ */
 
 struct afs_enc_chunk *afs_prepare_chunk(struct uio *s, struct uio *t, struct uio *e){
 	
@@ -394,7 +261,10 @@ struct afs_enc_chunk *afs_prepare_chunk(struct uio *s, struct uio *t, struct uio
 	
 	return chunk;
 }
-	
+
+
+/* Trims a chunk to specified start and end point */
+
 void afs_trim_chunk(struct afs_enc_chunk *chunk, int start, int end){
 	
 	/* Trims the chunk to start and end */
@@ -413,15 +283,14 @@ void afs_trim_chunk(struct afs_enc_chunk *chunk, int start, int end){
 	
 }	
 
+
+/* Prepares an equivalent chunk from a uio strucure */
 struct afs_enc_chunk *afs_enc_tochunk(struct uio *uiop){
 	
 	/* Returns a chunk equivalent to the uiop structure */
 	struct afs_enc_chunk *ch = (struct afs_enc_chunk *)osi_Alloc(sizeof(struct afs_enc_chunk));
 	int len = uiop->uio_iov[0].iov_len, i;
 	char *temp;
-
-	printk("Inside tochunk");
-	afs_print_uioinfo(uiop);
 
 	ch->base = (char *)osi_Alloc(len * sizeof(char));
 	ch->len = len;
@@ -435,6 +304,8 @@ struct afs_enc_chunk *afs_enc_tochunk(struct uio *uiop){
 	return ch;
 }
 
+/* Merges 3 chunks together, general use case, merge Start, mid and end completion parts */
+
 struct afs_enc_chunk *afs_merge_chunk3(struct afs_enc_chunk *c1, struct afs_enc_chunk *c2, struct afs_enc_chunk *c3){
 	
 	/* Merges the three chunks based on the uio_start and uio_len, and *assume* that c2 is the actual request */
@@ -444,7 +315,6 @@ struct afs_enc_chunk *afs_merge_chunk3(struct afs_enc_chunk *c1, struct afs_enc_
 	int diff=do_mod64(totalLength, AFS_ENC_EXTENT);
 	
 	totalLength += (AFS_ENC_EXTENT - diff);	/* Patch the length */
-	printk("Length to be transferred to single chunk:%d %d %d %d\n",c1?c1->uio_len:0, c2?c2->uio_len:0, c3?c3->uio_len:0, totalLength);
 	ch = (struct afs_enc_chunk *)osi_Alloc(sizeof(struct afs_enc_chunk));
 	ch->base = (char *)osi_Alloc(totalLength * sizeof(char));
 	
@@ -497,9 +367,14 @@ afs_int32 afs_is_md(char *aname){
 	else return 0;
 }
 
+/* A mindless function currently, constructs a metadata file
+ * using just the file size.
+ * TODO: Construct a more full fledged API for metadata storage
+ */
+
 struct uio *afs_get_mduio(int size){
 
-	char dummy[100];
+	char dummy[10];
 	sprintf(dummy,"%d",size);
 	struct uio *mdauio = (struct uio *)osi_Alloc(sizeof(struct uio));
 	struct iovec *mdiovec = (struct iovec *)osi_Alloc(sizeof(struct iovec));;
