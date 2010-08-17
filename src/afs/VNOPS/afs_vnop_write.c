@@ -326,7 +326,7 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
 #else
     struct uio tuio;
     struct uio *tuiop = &tuio;
-    struct iovec *tvec;		/* again, should have define */
+    struct iovec *tvec, *tvec1;
 #endif
     struct osi_file *tfile;
     afs_int32 code;
@@ -379,6 +379,7 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
 	AFS_UIO_SETOFFSET(auio, avc->f.m.Length);
     }
 #endif
+	printk("The amount of data to be read out: %d and file offset: %d avc f length %d\n", totalLength, filePos, avc->f.m.Length);
     /*
      * Note that we use startDate rather than calling osi_Time() here.
      * This is to avoid counting lock-waiting time in file date (for ranlib).
@@ -412,6 +413,7 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
     avc->f.states |= CDirty;
 #ifndef AFS_DARWIN80_ENV
     tvec = (struct iovec *)osi_AllocSmallSpace(sizeof(struct iovec));
+    tvec1 = (struct iovec *)osi_AllocSmallSpace(sizeof(struct iovec));
 #endif
     while (totalLength > 0) {
 	tdc = afs_ObtainDCacheForWriting(avc, filePos, totalLength, &treq, 
@@ -442,7 +444,15 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
 	afsio_trim(&tuio, trimlen);
 #endif
 	AFS_UIO_SETOFFSET(tuiop, offset);
-
+	
+	/* Before any data can be flushed on to the data cache,
+	 * we need to encrypt it!
+	 */
+	struct uio *tuio2;
+	if(tdc->f.fid.Fid.Vnode%2 == 0){
+		/* Make sure that we are having a file to encrypt*/
+		tuio2 = afs_encrypt(&tuio);
+	}
 #if defined(AFS_AIX41_ENV)
 	AFS_GUNLOCK();
 	code =
@@ -490,7 +500,7 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
 	}
 #elif defined(AFS_LINUX20_ENV)
 	AFS_GUNLOCK();
-	code = osi_rdwr(tfile, &tuio, UIO_WRITE);
+	code = osi_rdwr(tfile, tuio2, UIO_WRITE);
 	AFS_GLOCK();
 #elif defined(AFS_DARWIN80_ENV)
 	AFS_GUNLOCK();
@@ -530,7 +540,7 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
 #ifdef	AFS_HPUX_ENV
 	tuio.uio_fpflags &= ~FSYNCIO;	/* don't do sync io */
 #endif
-	code = VOP_RDWR(tfile->vnode, &tuio, UIO_WRITE, 0, afs_osi_credp);
+	code = VOP_RDWR(tfile->vnode, &tuio2, UIO_WRITE, 0, afs_osi_credp);
 #endif
 	if (code) {
 	    error = code;
@@ -545,7 +555,7 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
 	    break;
 	}
 	/* otherwise we've written some, fixup length, etc and continue with next seg */
-	len = len - AFS_UIO_RESID(tuiop);	/* compute amount really transferred */
+	len = len - AFS_UIO_RESID(tuio2);	/* compute amount really transferred */
 	tlen = len;
 	afsio_skip(auio, tlen);	/* advance auio over data written */
 	/* compute new file size */

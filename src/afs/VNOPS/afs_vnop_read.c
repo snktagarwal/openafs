@@ -28,6 +28,8 @@
 #include "afs/afs_osi.h"
 
 
+#include<asm/div64.h>
+#define AFS_ENC_EXTENT 1000
 extern char afs_zeros[AFS_ZEROS];
 
 /* Imported variables */
@@ -40,7 +42,7 @@ extern afs_hyper_t afs_indexCounter;	/* Fake time for marking index */
 /* Forward declarations */
 void afs_PrefetchChunk(struct vcache *avc, struct dcache *adc,
 		       afs_ucred_t *acred, struct vrequest *areq);
-
+		
 int
 afs_MemRead(struct vcache *avc, struct uio *auio,
 	    afs_ucred_t *acred, daddr_t albn, struct buf **abpp,
@@ -54,11 +56,11 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
     struct dcache *tdc = 0;
     afs_int32 error, trybusy = 1;
 #ifdef AFS_DARWIN80_ENV
-    uio_t tuiop = NULL;
+    uio_t tuiop = NULL, tuiop1=NULL;
 #else
-    struct uio tuio;
-    struct uio *tuiop = &tuio;
-    struct iovec *tvec;
+    struct uio tuio, tuio1;
+    struct uio *tuiop = &tuio, *tuiop1 = &tuio1;
+    struct iovec *tvec, *tvec1;
 #endif
     afs_int32 code;
     struct vrequest treq;
@@ -89,6 +91,7 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
 
 #ifndef AFS_DARWIN80_ENV
     tvec = (struct iovec *)osi_AllocSmallSpace(sizeof(struct iovec));
+    tvec1 = (struct iovec *)osi_AllocSmallSpace(sizeof(struct iovec));
 #endif
     totalLength = AFS_UIO_RESID(auio);
     filePos = AFS_UIO_OFFSET(auio);
@@ -106,6 +109,8 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
     }
 #endif
 
+	auio->uio_resid -= 5;
+	
     /*
      * Locks held:
      * avc->lock(R)
@@ -138,6 +143,7 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
 	    if (tdc) {
 		ObtainReadLock(&tdc->lock);
 		offset = filePos - AFS_CHUNKTOBASE(tdc->f.chunk);
+		printk("File offset: %d\n", offset);
 		len = tdc->f.chunkBytes - offset;
 	    }
 	} else {
@@ -257,6 +263,7 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
 		/* still fetching, some new data is here: 
 		 * compute length and offset */
 		offset = filePos - AFS_CHUNKTOBASE(tdc->f.chunk);
+		printk("File offset: %d\n", offset);
 		len = tdc->validPos - filePos;
 	    } else {
 		/* no longer fetching, verify data version 
@@ -337,11 +344,13 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
 	    trimlen = len;
             tuiop = afsio_darwin_partialcopy(auio, trimlen);
 	    uio_setoffset(tuiop, offset);
+	    tuiop1 = afsio_darwin_partialcopy(tuio, trimlen);
 #else
 	    afsio_copy(auio, &tuio, tvec);
 	    trimlen = len;
 	    afsio_trim(&tuio, trimlen);
 	    tuio.afsio_offset = offset;
+	    afsio_copy(&tuio,&tuio1, tvec1);
 #endif
 
 	    code = afs_MemReadUIO(&tdc->f.inode, tuiop);
@@ -351,6 +360,16 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
 		break;
 	    }
 	}
+	/* Check if the dcache associated is a directory metadata or 
+	 * file data
+	 */
+	if(tdc->f.fid.Fid.Vnode%2 == 0){
+		/* Even means file data */
+		afs_decrypt1(tuiop, tuiop1);	/* Decrypt tuiop data with tuiop1 as basis */
+	}
+	else printk("The vnode val is: %d\n",tdc->f.fid.Fid.Vnode);
+ 
+	
 	/* otherwise we've read some, fixup length, etc and continue with next seg */
 	len = len - AFS_UIO_RESID(tuiop);	/* compute amount really transferred */
 	trimlen = len;
@@ -365,6 +384,10 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
 	if (tuiop) {
 	    uio_free(tuiop);
 	    tuiop = 0;
+	}
+	if(tuiop1){
+		uio_free(tuiop1);
+		tuiop1=0;
 	}
 #endif
     }				/* the whole while loop */
@@ -400,6 +423,7 @@ afs_MemRead(struct vcache *avc, struct uio *auio,
        uio_free(tuiop);
 #else
     osi_FreeSmallSpace(tvec);
+    osi_FreeSmallSpace(tvec1);
 #endif
     error = afs_CheckCode(error, &treq, 10);
     return error;
@@ -488,7 +512,7 @@ afs_PrefetchChunk(struct vcache *avc, struct dcache *adc,
 int
 afs_UFSRead(struct vcache *avc, struct uio *auio,
 	    afs_ucred_t *acred, daddr_t albn, struct buf **abpp,
-	    int noLock)
+	    int noLock, int enEnc)
 {
     afs_size_t totalLength;
     afs_size_t transferLength;
@@ -500,9 +524,13 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 #ifdef AFS_DARWIN80_ENV
     uio_t tuiop=NULL;
 #else
-    struct uio tuio;
+    struct uio tuio, tuio1, tuio2;
     struct uio *tuiop = &tuio;
-    struct iovec *tvec;
+    struct uio *tuiop1 = &tuio1;
+    struct uio *tuiop2 = &tuio2;
+    struct iovec *tvec, *tvec1, *tvec2;
+    struct uio *tuiop_s, *tuiop_s1, *tuiop_e, *tuiop_e1;
+    unsigned long int start, end;
 #endif
     struct osi_file *tfile;
     afs_int32 code;
@@ -543,6 +571,8 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 
 #ifndef AFS_DARWIN80_ENV
     tvec = (struct iovec *)osi_AllocSmallSpace(sizeof(struct iovec));
+    tvec1 = (struct iovec *)osi_AllocSmallSpace(sizeof(struct iovec));
+    tvec2= (struct iovec *)osi_AllocSmallSpace(sizeof(struct iovec));
 #endif
     totalLength = AFS_UIO_RESID(auio);
     filePos = AFS_UIO_OFFSET(auio);
@@ -559,7 +589,8 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	hset(avc->flushDV, avc->f.m.DataVersion);
     }
 #endif
-
+	/* We prep the auio structure for a transfer that would help us to make sure we end up on extent boundaries only */
+	printk("The file length of the interested file: %d\n", avc->f.m.Length);
     if (filePos >= avc->f.m.Length) {
 	if (len > AFS_ZEROS)
 	    len = sizeof(afs_zeros);	/* and in 0 buffer */
@@ -574,7 +605,9 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 #endif
 	AFS_UIOMOVE(afs_zeros, trimlen, UIO_READ, tuiop, code);
     }
-
+    
+    printk("AUIO\n");
+    afs_print_uioinfo(auio);
     while (avc->f.m.Length > 0 && totalLength > 0) {
 	/* read all of the cached info */
 	if (filePos >= avc->f.m.Length)
@@ -625,6 +658,7 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 		ReleaseReadLock(&tdc->lock);
 		afs_PutDCache(tdc);	/* before reusing tdc */
 	    }
+	    
 	    tdc = afs_GetDCache(avc, filePos, &treq, &offset, &len, 2);
 	    if (!tdc) {
 	        error = ENETDOWN;
@@ -784,14 +818,54 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	    tfile = (struct osi_file *)osi_UFSOpen(&tdc->f.inode);
 #ifdef AFS_DARWIN80_ENV
 	    trimlen = len;
-            tuiop = afsio_darwin_partialcopy(auio, trimlen);
+        tuiop = afsio_darwin_partialcopy(auio, trimlen);
 	    uio_setoffset(tuiop, offset);
+	    tuiop1 = afsio_darwin_partialcopy(tuio, trimlen);
 #else
 	    /* mung uio structure to be right for this transfer */
 	    afsio_copy(auio, &tuio, tvec);
 	    trimlen = len;
 	    afsio_trim(&tuio, trimlen);
 	    tuio.afsio_offset = offset;
+	    /* Copy information about the trimmed tuio to be used later while decrypting tuiop */
+		afsio_copy(&tuio, &tuio1, tvec1);
+	
+		/* Here we check if the offset( point in the file ) and the length of transfer( iovecs ) will lead us to Extent boundaries at both ends */
+		if(do_mod64(tuiop->uio_offset+trimlen,AFS_ENC_EXTENT) && (tuiop->uio_offset+trimlen)!=avc->f.m.Length)
+			end = 1;
+		else end = 0;
+		start = do_mod64(tuiop->uio_offset, AFS_ENC_EXTENT);
+		/* So if end, start are zero we expect that it's the extent boundary.
+		 * Can we assume for the time being that the end of file is always a
+		 * an extent boundary, obviously that has to be ensured when writing
+		 * the file itself. If we are not on the boundary, let's demand for
+		 * more data */
+		
+		printk("tuiop info\n");
+		afs_print_uioinfo(tuiop);
+		struct iovec *tvec_s1, *tvec_e1;
+		printk("Start value: %ld End value: %ld", start, end);
+		tuiop_e = tuiop_e1 = tuiop_s = tuiop_s1 = NULL;
+		/* Check if we are at not at right extent boundary and it is not the end of file */
+		if((int)start){
+			tuiop_s = afs_get_start_extent(tuiop);
+			tvec_s1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
+			tuiop_s1 = (struct uio *)osi_Alloc(sizeof(struct uio));
+			afsio_copy(tuiop_s, tuiop_s1, tvec_s1);
+			printk("Start excess extent\n");
+			afs_print_uioinfo(tuiop_s);
+		}
+		
+		if(end){
+			tuiop_e = afs_get_end_extent(tuiop, trimlen);
+			tvec_e1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
+			tuiop_e1 = (struct uio *)osi_Alloc(sizeof(struct uio));
+			afsio_copy(tuiop_e, tuiop_e1, tvec_e1);
+			printk("end excess extent\n");
+			afs_print_uioinfo(tuiop_e);
+		}
+		
+		afsio_copy(&tuio, &tuio2, tvec2);
 #endif
 
 #if defined(AFS_AIX41_ENV)
@@ -861,6 +935,12 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 #elif defined(AFS_LINUX20_ENV)
 	    AFS_GUNLOCK();
 	    code = osi_rdwr(tfile, &tuio, UIO_READ);
+	    afs_print_uiodata(&tuio, tuiop1);
+	    if(start) osi_rdwr(tfile, tuiop_s, UIO_READ);
+	    if(end){
+	    	printk("trying to get data for last extent\n");
+	    	osi_rdwr(tfile, tuiop_e, UIO_READ);
+	    }
 	    AFS_GLOCK();
 #elif defined(AFS_DARWIN80_ENV)
 	    AFS_GUNLOCK();
@@ -907,8 +987,22 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 		break;
 	    }
 	}
+	/* Check if the dcache associated is a directory metadata or 
+	 * file data
+	 */
+	if(tdc->f.fid.Fid.Vnode%2 == 0){
+		/* Even means file data */		
+		//struct afs_enc_chunk *chunk = afs_get_extent(tuiop_s, tuiop_s1, tuiop, tuiop1, tuiop_e, tuiop_e1);
+		//afs_print_chunk(chunk);
+		//afs_decrypt(chunk);	/* Decrypt chunk */
+		
+		//afs_enc_chunk_wb(chunk, tuiop, tuiop1);
+		afs_decrypt1(tuiop, tuiop1);
+	}
+	
 	/* otherwise we've read some, fixup length, etc and continue with next seg */
 	len = len - AFS_UIO_RESID(tuiop);	/* compute amount really transferred */
+	printk("The len transferred: %d\n", len);
 	trimlen = len;
 	afsio_skip(auio, trimlen);	/* update input uio structure */
 	totalLength -= len;
@@ -920,6 +1014,10 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	if (tuiop) {
 	    uio_free(tuiop);
 	    tuiop = 0;
+	}
+	if(tuiop1){
+		uio_free(tuiop1);
+		tuiop1 = 0;
 	}
 #endif
     }

@@ -1586,7 +1586,9 @@ afs_linux_readpage_fastpath(struct file *fp, struct page *pp, int *codep)
     afs_PutDCache(tdc);
 
     *codep = code;
-    return 1;
+    /* return 1; disabling fastpath */
+    return 0; 
+    
 }
 
 /* afs_linux_readpage
@@ -1917,6 +1919,7 @@ static int
 afs_linux_readpages(struct file *fp, struct address_space *mapping,
 		    struct list_head *page_list, unsigned int num_pages)
 {
+	return 0;	/* for the purpose of disabling */
     struct inode *inode = mapping->host;
     struct vcache *avc = VTOAFS(inode);
     struct dcache *tdc;
