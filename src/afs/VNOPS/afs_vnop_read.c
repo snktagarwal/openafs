@@ -826,7 +826,11 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	    trimlen = len;
 	    afsio_trim(&tuio, trimlen);
 	    tuio.afsio_offset = offset;
-	    
+	    /* Decrypt while reading:
+	     * If the file is marked encrypted, then we see the request and check
+	     * the boundary conditions. If they match then nothing is fetched,
+	     * but if they fail then we fetch right and left extents correspondingly
+	     */
 	    if((int)avc->is_enc==1){
 			/* Copy information about the trimmed tuio to be used later while decrypting tuiop */
 			afsio_copy(&tuio, &tuio1, tvec1);
@@ -836,37 +840,24 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 				end = 1;
 			else end = 0;
 			start = do_mod64(tuiop->uio_offset, AFS_ENC_EXTENT);
-			/* So if end, start are zero we expect that it's the extent boundary.
-			 * Can we assume for the time being that the end of file is always a
-			 * an extent boundary, obviously that has to be ensured when writing
-			 * the file itself. If we are not on the boundary, let's demand for
-			 * more data */
-		
-			//printk("tuiop info\n");
-			//afs_print_uioinfo(tuiop);
-
-			//printk("Start value: %ld End value: %ld", start, end);
 			tuiop_e = tuiop_e1 = tuiop_s = tuiop_s1 = NULL;
-			/* Check if we are at not at right extent boundary and it is not the end of file */
+
+			/* Check if we are at at right extent boundary */
 			if((int)start){
 				tuiop_s = afs_get_start_extent(tuiop, AFS_ENC_READ);
 				tvec_s1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
 				tuiop_s1 = (struct uio *)osi_Alloc(sizeof(struct uio));
 				afsio_copy(tuiop_s, tuiop_s1, tvec_s1);
-				//printk("Start excess extent\n");
-				//afs_print_uioinfo(tuiop_s);
 			}
-		
+			
+			/* Check for the other end as well */
 			if(end){
 				tuiop_e = afs_get_end_extent(tuiop, trimlen, AFS_ENC_READ);
 				tvec_e1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
 				tuiop_e1 = (struct uio *)osi_Alloc(sizeof(struct uio));
 				afsio_copy(tuiop_e, tuiop_e1, tvec_e1);
-				//printk("end excess extent\n");
-				//afs_print_uioinfo(tuiop_e);
 			}
 			chunk = afs_prepare_chunk(tuiop_s1, tuiop1, tuiop_e1);
-		
 			afsio_copy(&tuio, &tuio2, tvec2);
 		}
 #endif
@@ -939,22 +930,14 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	    AFS_GUNLOCK();
 	    if(avc->is_enc==1){			
 			if(start){		
-				printk("Start extent: ");
-				afs_print_uioinfo(tuiop_s);
 				osi_rdwr(tfile, tuiop_s, UIO_READ);
 				afs_chunk_append(chunk, tuiop_s, tuiop_s1);
-				//osi_FreeSmallSpace(tvec_s1);
 			}
-			printk("Mid extent: ");
-			afs_print_uioinfo(tuiop);
 			code = osi_rdwr(tfile, &tuio, UIO_READ);
 			afs_chunk_append(chunk, tuiop, tuiop1);
 			if(end){
-				printk("End extent: ");
-				afs_print_uioinfo(tuiop_e);
 				osi_rdwr(tfile, tuiop_e, UIO_READ);
 				afs_chunk_append(chunk, tuiop_e, tuiop_e1);
-				//osi_FreeSmallSpace(tvec_e1);
 			}
 	    }
 	    else code = osi_rdwr(tfile, &tuio, UIO_READ);	    
@@ -1007,10 +990,8 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	/* Check if the dcache associated is a directory metadata or 
 	 * file data
 	 */
-	if(tdc->f.fid.Fid.Vnode%2 == 0 && avc->is_enc==1){
-		/* Even means file data */		
-
-		//afs_print_chunk(chunk);
+	if(avc->is_enc==1){
+	
 		afs_decrypt(chunk);	/* Decrypt chunk */	
 		afs_enc_chunk_wb(chunk, tuiop, tuiop1);
 
@@ -1018,7 +999,6 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	
 	/* otherwise we've read some, fixup length, etc and continue with next seg */
 	len = len - AFS_UIO_RESID(tuiop);	/* compute amount really transferred */
-	//printk("The len transferred: %d\n", len);
 	trimlen = len;
 	afsio_skip(auio, trimlen);	/* update input uio structure */
 	totalLength -= len;
@@ -1066,4 +1046,3 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
     error = afs_CheckCode(error, &treq, 13);
     return error;
 }
-	

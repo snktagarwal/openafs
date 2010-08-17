@@ -172,7 +172,7 @@ char *Tnam1;
 /* Note that we don't set CDirty here, this is OK because the unlink
  * RPC is called synchronously */
 int
-afs_remove(OSI_VC_DECL(adp), char *aname, afs_ucred_t *acred)
+afs_remove1(OSI_VC_DECL(adp), char *aname, afs_ucred_t *acred)
 {
     struct vrequest treq;
     struct dcache *tdc;
@@ -322,7 +322,6 @@ afs_remove(OSI_VC_DECL(adp), char *aname, afs_ucred_t *acred)
 	if (tdc) 
 	    ObtainSharedLock(&tdc->lock, 640);
     }
-
     osi_dnlc_remove(adp, aname, tvc);
 
     Tadp1 = adp;
@@ -471,3 +470,20 @@ afs_remunlink(struct vcache *avc, int doit)
 
     return code;
 }
+
+int
+afs_remove(OSI_VC_DECL(adp), char *aname, afs_ucred_t *acred)
+{
+	int code, mdcode;
+	struct vcache *mdavcp;
+	char *mdaname;
+	code = afs_remove1(adp, aname, acred);
+	mdaname = afs_get_md_filename(aname);
+	mdcode = afs_lookup(adp, mdaname, &mdavcp, acred);
+	afs_PutVCache(mdavcp);
+	if(!mdcode) afs_remove1(adp, mdaname, acred);
+	return code;
+}
+	
+	
+

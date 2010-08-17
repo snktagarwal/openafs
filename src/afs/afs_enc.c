@@ -36,14 +36,8 @@ void afs_print_uioinfo(struct uio *uiop){
  */
 
 
-/* Proof of concept implementation.
- * Presently the model is as simple as ROT-13. This is a byte wise substitution cipher
- * which takes a byte at a time( ascii character ) and rotates it by 13 places.
- * For ascii characters decryption is simply (char)val + 13. 
- */
 
-/* Presently implements the rot13 algorithm, block size is one byte */
- 
+/* Implementation of the ROT-13 cipher */ 
 void
 afs_decrypt_extent(char *extent_vec, int extent_len){
 	
@@ -135,7 +129,6 @@ afs_decrypt1(struct uio *data, struct uio *basis)
 			
 			else if(extent_ind == AFS_ENC_EXTENT)
 			{
-				//printk("Decrypting extent with basis: %d", extent_basis);
 				/* Decrypt the extent */
 				afs_decrypt_extent(extent_vec, AFS_ENC_EXTENT);
 			
