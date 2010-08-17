@@ -25,17 +25,19 @@
 #include "afs/afs_osidnlc.h"
 #include "afs/unified_afs.h"
 
+
+
 /* question: does afs_create need to set CDirty in the adp or the avc?
  * I think we can get away without it, but I'm not sure.  Note that
  * afs_setattr is called in here for truncation.
  */
 #ifdef AFS_SGI64_ENV
 int
-afs_create(OSI_VC_DECL(adp), char *aname, struct vattr *attrs, int flags,
+afs_create1(OSI_VC_DECL(adp), char *aname, struct vattr *attrs, int flags,
 	   int amode, struct vcache **avcp, afs_ucred_t *acred)
 #else /* AFS_SGI64_ENV */
 int
-afs_create(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
+afs_create1(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
 	   enum vcexcl aexcl, int amode, struct vcache **avcp,
 	   afs_ucred_t *acred)
 #endif				/* AFS_SGI64_ENV */
@@ -554,4 +556,42 @@ afs_LocalHero(struct vcache *avc, struct dcache *adc,
 	}
 	return 0;
     }
+}
+
+#ifdef AFS_SGI64_ENV
+int
+afs_create(OSI_VC_DECL(adp), char *aname, struct vattr *attrs, int flags,
+	   int amode, struct vcache **avcp, afs_ucred_t *acred)
+#else /* AFS_SGI64_ENV */
+int
+afs_create(OSI_VC_DECL(adp), char *aname, struct vattr *attrs,
+	   enum vcexcl aexcl, int amode, struct vcache **avcp,
+	   afs_ucred_t *acred)
+#endif				/* AFS_SGI64_ENV */
+{
+	
+	/* This is the main function which creates the two files, one the main and the other the metadata */
+
+
+	struct vcache *mdavcp;
+	char *mdaname = afs_get_md_filename(aname);
+	printk("Creating metadata file: %s\n", mdaname);
+	/* Create the metadata file */
+#ifdef AFS_SGI64_ENV
+	afs_create1(adp, mdaname, attrs, flags, amode, &mdavcp, acred);
+#else /* AFS_SGI64_ENV */
+	afs_create1(adp, mdaname, attrs, aexcl, amode, &mdavcp, acred);
+#endif				/* AFS_SGI64_ENV */
+
+	mdavcp->is_enc = 0;
+
+	/* Create the original file */
+#ifdef AFS_SGI64_ENV
+	afs_create1(adp, aname, attrs, flags, amode, avcp, acred);
+#else /* AFS_SGI64_ENV */
+	afs_create1(adp, aname, attrs, aexcl, amode, avcp, acred);
+#endif				/* AFS_SGI64_ENV */	
+	printk("The FID of the file is: %d", (*avcp)->f.fid.Fid.Vnode);
+	(*avcp)->is_enc = 1;
+	(*avcp)->mdFid = mdavcp->f.fid;
 }

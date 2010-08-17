@@ -137,6 +137,7 @@ UAFSOBJ = \
 	$(UOBJ)/osi_vfsops.o \
 	$(UOBJ)/afs_usrops.o \
 	$(UOBJ)/afs_enc.o \
+	$(UOBJ)/afs_enc_md.o \
 	$(UOBJ)/afsd.o \
 	$(UOBJ)/afsd_uafs.o \
 	$(UOBJ)/xdr.o \
@@ -898,6 +899,8 @@ $(UOBJ)/xdr_mem.o: $(TOP_SRC_RX)/xdr_mem.c
 $(UOBJ)/xdr_len.o: $(TOP_SRC_RX)/xdr_len.c
 	$(CRULE1)
 $(UOBJ)/afs_enc.o: $(TOP_SRC_AFS)/afs_enc.c
+	$(CRULE1)
+$(UOBJ)/afs_enc_md.o: $(TOP_SRC_AFS)/afs_enc_md.c
 	$(CRULE1)
 
 # These files are for the netscape plugin
