@@ -27,9 +27,6 @@
 #include "afs/afs_osidnlc.h"
 #include "afs/afs_osi.h"
 
-
-#include<asm/div64.h>
-
 extern char afs_zeros[AFS_ZEROS];
 
 /* Imported variables */
@@ -528,16 +525,16 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
     struct uio tuio, tuio1, tuio2;
     struct uio *tuiop = &tuio;
     struct uio *tuiop1 = &tuio1;
-    struct uio *tuiop2 = &tuio2;
-    struct iovec *tvec, *tvec1, *tvec2;
-    struct uio *tuiop_s, *tuiop_s1, *tuiop_e, *tuiop_e1;
-    unsigned long int start, end;
+    struct iovec *tvec=NULL, *tvec1=NULL, *tvec2=NULL;
+    struct uio *tuiop_s=NULL, *tuiop_s1=NULL, *tuiop_e=NULL, *tuiop_e1=NULL;
+	struct iovec *tvec_s1=NULL, *tvec_e1=NULL;
+    unsigned long int start=0, end=0;
 #endif
     struct osi_file *tfile;
     afs_int32 code;
     int trybusy = 1;
     struct vrequest treq;
-    struct afs_enc_chunk *chunk;
+    struct afs_enc_chunk *chunk=NULL;
 
     AFS_STATCNT(afs_UFSRead);
     if (avc && avc->vc_error)
@@ -829,46 +826,49 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	    trimlen = len;
 	    afsio_trim(&tuio, trimlen);
 	    tuio.afsio_offset = offset;
-	    /* Copy information about the trimmed tuio to be used later while decrypting tuiop */
-		afsio_copy(&tuio, &tuio1, tvec1);
+	    
+	    if((int)avc->is_enc==1){
+			/* Copy information about the trimmed tuio to be used later while decrypting tuiop */
+			afsio_copy(&tuio, &tuio1, tvec1);
 	
-		/* Here we check if the offset( point in the file ) and the length of transfer( iovecs ) will lead us to Extent boundaries at both ends */
-		if(do_mod64(tuiop->uio_offset+trimlen,AFS_ENC_EXTENT) && (tuiop->uio_offset+trimlen)!=avc->f.m.Length)
-			end = 1;
-		else end = 0;
-		start = do_mod64(tuiop->uio_offset, AFS_ENC_EXTENT);
-		/* So if end, start are zero we expect that it's the extent boundary.
-		 * Can we assume for the time being that the end of file is always a
-		 * an extent boundary, obviously that has to be ensured when writing
-		 * the file itself. If we are not on the boundary, let's demand for
-		 * more data */
+			/* Here we check if the offset( point in the file ) and the length of transfer( iovecs ) will lead us to Extent boundaries at both ends */
+			if(do_mod64(tuiop->uio_offset+trimlen,AFS_ENC_EXTENT))// && (tuiop->uio_offset+trimlen)!=avc->f.m.Length)
+				end = 1;
+			else end = 0;
+			start = do_mod64(tuiop->uio_offset, AFS_ENC_EXTENT);
+			/* So if end, start are zero we expect that it's the extent boundary.
+			 * Can we assume for the time being that the end of file is always a
+			 * an extent boundary, obviously that has to be ensured when writing
+			 * the file itself. If we are not on the boundary, let's demand for
+			 * more data */
 		
-		//printk("tuiop info\n");
-		//afs_print_uioinfo(tuiop);
-		struct iovec *tvec_s1, *tvec_e1;
-		//printk("Start value: %ld End value: %ld", start, end);
-		tuiop_e = tuiop_e1 = tuiop_s = tuiop_s1 = NULL;
-		/* Check if we are at not at right extent boundary and it is not the end of file */
-		if((int)start){
-			tuiop_s = afs_get_start_extent(tuiop, AFS_ENC_READ);
-			tvec_s1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
-			tuiop_s1 = (struct uio *)osi_Alloc(sizeof(struct uio));
-			afsio_copy(tuiop_s, tuiop_s1, tvec_s1);
-			//printk("Start excess extent\n");
-			//afs_print_uioinfo(tuiop_s);
+			//printk("tuiop info\n");
+			//afs_print_uioinfo(tuiop);
+
+			//printk("Start value: %ld End value: %ld", start, end);
+			tuiop_e = tuiop_e1 = tuiop_s = tuiop_s1 = NULL;
+			/* Check if we are at not at right extent boundary and it is not the end of file */
+			if((int)start){
+				tuiop_s = afs_get_start_extent(tuiop, AFS_ENC_READ);
+				tvec_s1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
+				tuiop_s1 = (struct uio *)osi_Alloc(sizeof(struct uio));
+				afsio_copy(tuiop_s, tuiop_s1, tvec_s1);
+				//printk("Start excess extent\n");
+				//afs_print_uioinfo(tuiop_s);
+			}
+		
+			if(end){
+				tuiop_e = afs_get_end_extent(tuiop, trimlen, AFS_ENC_READ);
+				tvec_e1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
+				tuiop_e1 = (struct uio *)osi_Alloc(sizeof(struct uio));
+				afsio_copy(tuiop_e, tuiop_e1, tvec_e1);
+				//printk("end excess extent\n");
+				//afs_print_uioinfo(tuiop_e);
+			}
+			chunk = afs_prepare_chunk(tuiop_s1, tuiop1, tuiop_e1);
+		
+			afsio_copy(&tuio, &tuio2, tvec2);
 		}
-		
-		if(end){
-			tuiop_e = afs_get_end_extent(tuiop, trimlen, AFS_ENC_READ);
-			tvec_e1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
-			tuiop_e1 = (struct uio *)osi_Alloc(sizeof(struct uio));
-			afsio_copy(tuiop_e, tuiop_e1, tvec_e1);
-			//printk("end excess extent\n");
-			//afs_print_uioinfo(tuiop_e);
-		}
-		chunk = afs_prepare_chunk(tuiop_s1, tuiop1, tuiop_e1);
-		
-		afsio_copy(&tuio, &tuio2, tvec2);
 #endif
 
 #if defined(AFS_AIX41_ENV)
@@ -937,18 +937,27 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	    AFS_GLOCK();
 #elif defined(AFS_LINUX20_ENV)
 	    AFS_GUNLOCK();
-	    
-	    if(start){
-	    	osi_rdwr(tfile, tuiop_s, UIO_READ);
-		    afs_chunk_append(chunk, tuiop_s, tuiop_s1);
-		}
-	    code = osi_rdwr(tfile, &tuio, UIO_READ);
-	    afs_chunk_append(chunk, tuiop, tuiop1);
-	    if(end){
-	    	osi_rdwr(tfile, tuiop_e, UIO_READ);
-	    	afs_chunk_append(chunk, tuiop_e, tuiop_e1);
+	    if(avc->is_enc==1){			
+			if(start){		
+				printk("Start extent: ");
+				afs_print_uioinfo(tuiop_s);
+				osi_rdwr(tfile, tuiop_s, UIO_READ);
+				afs_chunk_append(chunk, tuiop_s, tuiop_s1);
+				//osi_FreeSmallSpace(tvec_s1);
+			}
+			printk("Mid extent: ");
+			afs_print_uioinfo(tuiop);
+			code = osi_rdwr(tfile, &tuio, UIO_READ);
+			afs_chunk_append(chunk, tuiop, tuiop1);
+			if(end){
+				printk("End extent: ");
+				afs_print_uioinfo(tuiop_e);
+				osi_rdwr(tfile, tuiop_e, UIO_READ);
+				afs_chunk_append(chunk, tuiop_e, tuiop_e1);
+				//osi_FreeSmallSpace(tvec_e1);
+			}
 	    }
-	    	    
+	    else code = osi_rdwr(tfile, &tuio, UIO_READ);	    
 	    AFS_GLOCK();
 #elif defined(AFS_DARWIN80_ENV)
 	    AFS_GUNLOCK();
@@ -998,11 +1007,11 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
 	/* Check if the dcache associated is a directory metadata or 
 	 * file data
 	 */
-	if(tdc->f.fid.Fid.Vnode%2 == 0){
+	if(tdc->f.fid.Fid.Vnode%2 == 0 && avc->is_enc==1){
 		/* Even means file data */		
 
 		//afs_print_chunk(chunk);
-		afs_decrypt(chunk);	/* Decrypt chunk */		
+		afs_decrypt(chunk);	/* Decrypt chunk */	
 		afs_enc_chunk_wb(chunk, tuiop, tuiop1);
 
 	}
@@ -1057,3 +1066,4 @@ afs_UFSRead(struct vcache *avc, struct uio *auio,
     error = afs_CheckCode(error, &treq, 13);
     return error;
 }
+	

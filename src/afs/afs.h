@@ -861,6 +861,10 @@ struct vcache {
 #ifdef AFS_SUN5_ENV
     short multiPage;		/* count of multi-page getpages in progress */
 #endif
+	int is_enc;
+	struct VenusFid mdFid;
+	struct vcache *mdavcp;
+	int unencSize;
 };
 
 #define	DONT_CHECK_MODE_BITS	0
@@ -1461,7 +1465,7 @@ afs_set_cr_rgid(afs_ucred_t *cred, gid_t gid) {
 #define AFS_ENC_WRITE 1
 #define AFS_ENC_UIO 2
 #define AFS_ENC_CHUNK 3
-#define AFS_ENC_EXTENT 1024
+#define AFS_ENC_EXTENT 1000
 struct afs_enc_chunk{
 	
 	char *base;

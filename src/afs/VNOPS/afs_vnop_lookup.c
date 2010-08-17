@@ -1307,11 +1307,11 @@ osi_lookup_isdot(const char *aname)
 
 int
 #if defined(AFS_SUN5_ENV) || defined(AFS_SGI_ENV)
-afs_lookup(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, struct pathname *pnp, int flags, struct vnode *rdir, afs_ucred_t *acred)
+afs_lookup1(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, struct pathname *pnp, int flags, struct vnode *rdir, afs_ucred_t *acred)
 #elif defined(UKERNEL)
-afs_lookup(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, afs_ucred_t *acred, int flags)
+afs_lookup1(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, afs_ucred_t *acred, int flags)
 #else
-afs_lookup(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, afs_ucred_t *acred)
+afs_lookup1(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, afs_ucred_t *acred)
 #endif
 {
     struct vrequest treq;
@@ -1335,10 +1335,10 @@ afs_lookup(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, afs_ucred_t *acr
     afs_InitFakeStat(&fakestate);
 
     AFS_DISCON_LOCK();
-    
-    if ((code = afs_InitReq(&treq, acred)))
-	goto done;
+    if ((code = afs_InitReq(&treq, acred))){
 
+		goto done;
+	}
     if (afs_fakestat_enable && adp->mvstat == 1) {
        if (strcmp(aname, ".directory") == 0)
            tryEvalOnly = 1;
@@ -1387,16 +1387,17 @@ afs_lookup(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, afs_ucred_t *acr
 	}
     } else
 	code = 0;
-
+		
     /* watch for ".." in a volume root */
     if (adp->mvstat == 2 && aname[0] == '.' && aname[1] == '.' && !aname[2]) {
 	/* looking up ".." in root via special hacks */
 	if (adp->mvid == (struct VenusFid *)0 || adp->mvid->Fid.Volume == 0) {
+	    
 	    code = ENODEV;
 	    goto done;
 	}
 	/* otherwise we have the fid here, so we use it */
-	/*printf("Getting vcache\n");*/
+	
 	tvc = afs_GetVCache(adp->mvid, &treq, NULL, NULL);
 	afs_Trace3(afs_iclSetp, CM_TRACE_GETVCDOTDOT, ICL_TYPE_FID, adp->mvid,
 		   ICL_TYPE_POINTER, tvc, ICL_TYPE_INT32, code);
@@ -1854,7 +1855,7 @@ afs_lookup(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, afs_ucred_t *acr
     }
 
   done:
-    /* put the network buffer back, if need be */
+	/* put the network buffer back, if need be */
     if (tname != aname && tname)
 	osi_FreeLargeSpace(tname);
     if (code == 0) {
@@ -1899,4 +1900,38 @@ afs_lookup(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, afs_ucred_t *acr
     afs_PutFakeStat(&fakestate);
     AFS_DISCON_UNLOCK();
     return code;
+}
+
+int
+#if defined(AFS_SUN5_ENV) || defined(AFS_SGI_ENV)
+afs_lookup(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, struct pathname *pnp, int flags, struct vnode *rdir, afs_ucred_t *acred)
+#elif defined(UKERNEL)
+afs_lookup(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, afs_ucred_t *acred, int flags)
+#else
+afs_lookup(OSI_VC_DECL(adp), char *aname, struct vcache **avcp, afs_ucred_t *acred)
+#endif
+{
+int mdcode, code;
+struct vcache *mdavcp;
+char *mdaname = afs_get_md_filename(aname);
+struct VenusFid mdFid;
+#if defined(AFS_SUN5_ENV) || defined(AFS_SGI_ENV)
+	mdcode = afs_lookup1(adp, mdaname, &mdavcp, pnp, flags, rdir, acred);
+	code = afs_lookup1(adp, aname, avcp, pnp, flags, rdir, acred);
+#elif defined(UKERNEL)
+	mdcode = afs_lookup1(adp, mdaname, &mdavcp, acred, flags);
+	code = afs_lookup1(adp, aname, avcp, acred, flags);
+#else
+	mdcode = afs_lookup1(adp, mdaname, &mdavcp, acred);
+	code = afs_lookup1(adp, aname, avcp, acred);
+#endif
+
+	if(mdcode==0){
+		(*avcp)->is_enc = 1;
+		(*avcp)->mdFid = mdavcp->f.fid;
+		afs_fill_mdinfo(*avcp, mdavcp, acred);
+	}
+
+	afs_PutVCache(mdavcp);
+	return code;
 }

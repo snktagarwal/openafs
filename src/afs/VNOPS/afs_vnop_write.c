@@ -305,7 +305,7 @@ afs_MemWrite(struct vcache *avc, struct uio *auio, int aio,
 
 /* called on writes */
 int
-afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
+afs_UFSWrite1(register struct vcache *avc, struct uio *auio, int aio,
 	     afs_ucred_t *acred, int noLock)
 {
     afs_size_t totalLength;
@@ -325,11 +325,14 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
     uio_t tuiop = NULL;
 #else
     struct uio tuio;
-    struct uio *tuiop = &tuio;
+    struct uio *tuiop = &tuio, *tuio2=NULL;
     struct iovec *tvec, *tvec1;
-    struct uio *tuiop_s, *tuiop_e, *tuiop_s1, *tuiop_e1;
-    struct afs_enc_chunk *chunk_s, *chunk_e, *chunk;
-    int start, end;
+    struct uio *tuiop_s=NULL, *tuiop_e=NULL, *tuiop_s1=NULL, *tuiop_e1=NULL;
+
+    int start=0, end=0;
+    struct iovec *tvec_s1, *tvec_e1;
+	struct afs_enc_chunk *st =NULL, *en = NULL, *mid, *merge;
+	int s_mod=0, e_mod=0;
 #endif
     struct osi_file *tfile;
     afs_int32 code;
@@ -447,42 +450,40 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
 	afsio_trim(&tuio, trimlen);
 #endif
 	AFS_UIO_SETOFFSET(tuiop, offset);
+	printk("Got till here, where is the problem then ?");
 	
-	/* Get the boundary conditions, right now optimistic */
-	tuiop_e = tuiop_e1 = tuiop_s = tuiop_s1 = NULL;
-	printk("Length of file we are writing to: %d\n", avc->f.m.Length);
-	int s_mod = do_mod64(tuiop->uio_offset,AFS_ENC_EXTENT);
-	int e_mod = do_mod64(tuiop->uio_offset+trimlen,AFS_ENC_EXTENT);
-	if(e_mod && (tuiop->uio_offset+trimlen - e_mod + AFS_ENC_EXTENT)<=avc->f.m.Length)
-			end = 1;
-	else end = 0;
-	start = s_mod && (tuiop->uio_offset - s_mod + AFS_ENC_EXTENT) <= avc->f.m.Length;
 	
-	struct iovec *tvec_s1, *tvec_e1;
-	struct afs_enc_chunk *st =NULL, *en = NULL, *mid, *merge;
-	if((int)start){
-		tuiop_s = afs_get_start_extent(tuiop, AFS_ENC_WRITE);
-		tvec_s1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
-		tuiop_s1 = (struct uio *)osi_Alloc(sizeof(struct uio));
-		afsio_copy(tuiop_s, tuiop_s1, tvec_s1);
-		//printk("Start excess extent\n");
-		//afs_print_uioinfo(tuiop_s);
-	}
+	/* We need to first check if the file we are dealing with is a no encryption file( metadata + others ) OR encrypted file */
+	if(avc->is_enc == 1){
+		/* If we enter this block, then it means that we have a encrypted file to deal with.
+		 */ 
+		/* Get the boundary conditions, right now optimistic */
 		
-	if(end){
-		tuiop_e = afs_get_end_extent(tuiop, trimlen, AFS_ENC_WRITE);
-		tvec_e1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
-		tuiop_e1 = (struct uio *)osi_Alloc(sizeof(struct uio));
-		afsio_copy(tuiop_e, tuiop_e1, tvec_e1);
-		//printk("end excess extent\n");
-		//afs_print_uioinfo(tuiop_e);
+		printk("Length of file we are writing to: %d\n", avc->f.m.Length);
+		s_mod = do_mod64(tuiop->uio_offset,AFS_ENC_EXTENT);
+		e_mod = do_mod64(tuiop->uio_offset+trimlen,AFS_ENC_EXTENT);
+		if(e_mod && (tuiop->uio_offset+trimlen - e_mod + AFS_ENC_EXTENT)<=avc->f.m.Length)
+				end = 1;
+		else end = 0;
+		start = s_mod && (tuiop->uio_offset - s_mod + AFS_ENC_EXTENT) <= avc->f.m.Length;
+	
+		if((int)start){
+			tuiop_s = afs_get_start_extent(tuiop, AFS_ENC_WRITE);
+			tvec_s1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
+			tuiop_s1 = (struct uio *)osi_Alloc(sizeof(struct uio));
+			afsio_copy(tuiop_s, tuiop_s1, tvec_s1);
+		}
+		
+		if(end){
+			tuiop_e = afs_get_end_extent(tuiop, trimlen, AFS_ENC_WRITE);
+			tvec_e1 = (struct iovec *)osi_Alloc(sizeof(struct iovec));
+			tuiop_e1 = (struct uio *)osi_Alloc(sizeof(struct uio));
+			afsio_copy(tuiop_e, tuiop_e1, tvec_e1);
+
+		}
+		if(tdc->f.fid.Fid.Vnode%2 != 0) start=end=0;
 	}
 	
-	/* Before any data can be flushed on to the data cache,
-	 * we need to encrypt it!
-	 */
-	struct uio *tuio2;
-	if(tdc->f.fid.Fid.Vnode%2 != 0) start=end=0;
 #if defined(AFS_AIX41_ENV)
 	AFS_GUNLOCK();
 	code =
@@ -530,36 +531,30 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
 	}
 #elif defined(AFS_LINUX20_ENV)
 	AFS_GUNLOCK();
-	//afs_print_uioinfo(tuiop_s);
-	//afs_print_uioinfo(tuiop_e);
-	if(start){
-		osi_rdwr(tfile, tuiop_s, UIO_READ);
-		st = afs_enc_tochunk(tuiop_s1);
-		afs_decrypt(st);
-		afs_trim_chunk(st, -1, s_mod);
+	if(avc->is_enc == 1){
+		if(start){
+			osi_rdwr(tfile, tuiop_s, UIO_READ);
+			st = afs_enc_tochunk(tuiop_s1);
+			afs_decrypt(st);
+			afs_trim_chunk(st, -1, s_mod);
+		}
+		if(end){
+			osi_rdwr(tfile, tuiop_e, UIO_READ);
+			en = afs_enc_tochunk(tuiop_e1);
+			afs_decrypt(en);
+			afs_trim_chunk(en, e_mod, -1);
+		}
+		mid = afs_enc_tochunk(&tuio);
+		afs_print_chunk(mid);
+		merge = afs_merge_chunk3(st, mid, en);
+		afs_encrypt(merge);
+		afs_print_chunk(merge);
+		tuio2 = afs_prepare_wb(&tuio, merge->len);	/* Checks if we need to patch up the tuio structure */
+		afs_enc_chunk_wb(merge, tuio2, NULL);
+		afs_print_uioinfo(tuio2);
+		code = osi_rdwr(tfile, tuio2, UIO_WRITE);
 	}
-	if(end){
-		osi_rdwr(tfile, tuiop_e, UIO_READ);
-		en = afs_enc_tochunk(tuiop_e1);
-		afs_decrypt(en);
-		afs_trim_chunk(en, e_mod, -1);
-	}
-	//printk("start clear");
-	//afs_print_chunk(st);
-	//afs_print_chunk(en);
-	mid = afs_enc_tochunk(&tuio);
-	afs_print_chunk(mid);
-	merge = afs_merge_chunk3(st, mid, en);
-	afs_encrypt(merge);
-	afs_print_chunk(merge);
-	tuio2 = afs_prepare_wb(&tuio, merge->len);	/* Checks if we need to patch up the tuio structure */
-	afs_enc_chunk_wb(merge, tuio2, NULL);
-	afs_print_uioinfo(tuio2);
-	code = osi_rdwr(tfile, tuio2, UIO_WRITE);
-	//afs_encrypt(chunk_s);
-	
-	//afs_print_chunk(chunk_s);
-	
+	else osi_rdwr(tfile, &tuio, UIO_WRITE);
 	AFS_GLOCK();
 #elif defined(AFS_DARWIN80_ENV)
 	AFS_GUNLOCK();
@@ -614,7 +609,9 @@ afs_UFSWrite(struct vcache *avc, struct uio *auio, int aio,
 	    break;
 	}
 	/* otherwise we've written some, fixup length, etc and continue with next seg */
-	len = len - AFS_UIO_RESID(tuio2);	/* compute amount really transferred */
+	if(avc->is_enc == 1)
+		len = len - AFS_UIO_RESID(tuio2);	/* compute amount really transferred */
+	else len = len - AFS_UIO_RESID(&tuio);
 	tlen = len;
 	afsio_skip(auio, tlen);	/* advance auio over data written */
 	/* compute new file size */
@@ -960,3 +957,31 @@ afs_fsync(OSI_VC_DECL(avc), afs_ucred_t *acred)
     ReleaseSharedLock(&avc->lock);
     return code;
 }
+
+int
+afs_UFSWrite(register struct vcache *avc, struct uio *auio, int aio,
+	     afs_ucred_t *acred, int noLock)
+{	
+	int code, size=12;
+	struct vrequest treq;
+	struct vcache *mdavcp;
+	struct uio *mdauio;
+	if(avc->is_enc==1){
+	    afs_InitReq(&treq, acred);
+		mdavcp = afs_GetVCache(&(avc->mdFid), &treq, NULL, NULL);
+		mdauio = afs_get_mduio(size);
+		afs_print_uioinfo(mdauio);
+		
+		afs_open(&mdavcp, 1, acred);
+		afs_UFSWrite1(mdavcp, mdauio, 1, acred, noLock); 
+		afs_close(mdavcp, 1, acred);
+		
+		afs_PutVCache(mdavcp);
+	}
+	//printk("DEBUG:****Offset: %d Reside: %d Iov: %d*****\n", auio->uio_offset, AFS_UIO_RESID(auio), auio->uio_iov[0].iov_len);
+	code = afs_UFSWrite1(avc, auio, aio, acred, noLock);
+	avc->f.m.Length = size;
+	return code;
+}
+	
+	
