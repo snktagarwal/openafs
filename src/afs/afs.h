@@ -1294,6 +1294,7 @@ extern struct brequest afs_brs[NBRS];	/* request structures */
 #define	AFS_FSPORT	    ((unsigned short) htons(7000))
 #define	AFS_VLPORT	    ((unsigned short) htons(7003))
 
+/* Enable encryption module, use Macro for later use perhaps */
 #define	afs_read(avc, uio, acred, albn, abpp, nolock) \
         (*(afs_cacheType->vread))(avc, uio, acred, albn, abpp, nolock)
 #define	afs_write(avc, uio, aio, acred, nolock) \
@@ -1452,5 +1453,16 @@ static_inline void
 afs_set_cr_rgid(afs_ucred_t *cred, gid_t gid) {
     cred->cr_rgid = gid;
 }
+
+/* Encryption structures
+ * The len of chunk will always be integral multiple of AFS_ENC_EXTENT.
+ */
+struct afs_enc_chunk{
+	
+	char *base;
+	int len;
+	int uio_start; /* Start index for the data to be read */
+	int uio_len;   /* Length of the data to be read */
+};
 #endif
 #endif /* _AFS_H_ */

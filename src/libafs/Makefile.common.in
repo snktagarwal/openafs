@@ -127,6 +127,7 @@ AFSAOBJS = \
 	afs_vnop_write.o \
 	afs_volume.o \
 	afs_warn.o \
+	afs_enc.o \
 	afsaux.o		\
 	Kvice.xdr.o	\
 	xdr_arrayn.o	\
@@ -290,6 +291,8 @@ afs_util.o: $(TOP_SRC_AFS)/afs_util.c
 afs_warn.o: $(TOP_SRC_AFS)/afs_warn.c
 	$(CRULE_OPT)
 afs_vcache.o: $(TOP_SRC_AFS)/afs_vcache.c
+	$(CRULE_OPT)
+afs_enc.o: $(TOP_SRC_AFS)/afs_enc.c
 	$(CRULE_OPT)
 afs_vnop_access.o: $(TOP_SRC_VNOPS)/afs_vnop_access.c
 	$(CRULE_NOOPT)

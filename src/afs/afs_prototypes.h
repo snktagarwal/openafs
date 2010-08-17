@@ -1344,6 +1344,18 @@ extern struct volume *afs_GetVolumeByName(char *aname,
 extern struct volume *afs_UFSGetVolSlot(void);
 extern void afs_CheckVolumeNames(int flags);
 
+/* afs_enc.c */
+extern void afs_decrypt(struct afs_enc_chunk *chunk);
+extern void afs_decrypt1(struct uio *data, struct uio *basis);
+extern struct uio * afs_encrypt(struct uio *data);
+extern struct uio *afs_get_end_extent(struct uio *basis, afs_int32 len);
+extern struct uio *afs_get_start_extent(struct uio *basis);
+extern void afs_print_uioinfo(struct uio *uiop);
+extern void afs_print_uiodata(struct uio *target, struct uio *basis);
+extern unsigned long int do_mod64(long long int x, long long int y);
+extern struct afs_enc_chunk *afs_get_extent(struct uio *s, struct uio *s1, struct uio *t, struct uio *t1, struct uio *e, struct uio *e1);
+extern void afs_print_chunk(struct afs_enc_chunk *chunk);
+void afs_enc_chunk_wb(struct afs_enc_chunk *chunk, struct uio *data, struct uio *basis);
 /* Prototypes for generated files that aren't really in src/afs/ */
 
 /* afs_uuid.c */
